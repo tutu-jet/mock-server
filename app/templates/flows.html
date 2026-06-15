@@ -1,0 +1,479 @@
+{% extends "base.html" %}
+{% block title %}流量 - mock-server{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-3">
+    <div class="flex items-center gap-3">
+        <h1 class="text-lg font-semibold">实时流量</h1>
+        <span id="conn-status" class="text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600">未连接</span>
+        <span class="text-xs text-slate-400">缓冲上限 1000 条</span>
+    </div>
+    <div class="flex items-center gap-2">
+        <label class="text-xs text-slate-600 flex items-center gap-1">
+            <input type="checkbox" id="filter-hit-only" class="align-middle">
+            只看命中
+        </label>
+        <button id="btn-clear" class="text-xs px-2 py-1 border border-slate-300 rounded hover:bg-slate-100">清空</button>
+        <button id="btn-pause" class="text-xs px-2 py-1 border border-slate-300 rounded hover:bg-slate-100">暂停</button>
+    </div>
+</div>
+
+<div class="bg-white border border-slate-200 rounded overflow-hidden">
+    <table class="w-full text-sm table-fixed">
+        <thead class="bg-slate-50 text-left text-slate-500 text-xs">
+            <tr>
+                <th class="px-2 py-2 w-16">时间</th>
+                <th class="px-2 py-2 w-16">方法</th>
+                <th class="px-2 py-2 w-16">状态</th>
+                <th class="px-2 py-2">URL</th>
+                <th class="px-2 py-2 w-24">规则</th>
+                <th class="px-2 py-2 w-16 text-right">耗时</th>
+                <th class="px-2 py-2 w-20 text-center">操作</th>
+            </tr>
+        </thead>
+        <tbody id="flow-rows">
+            {% for f in flows %}
+                {% include "_flow_row.html" with context %}
+            {% endfor %}
+        </tbody>
+    </table>
+    <div id="flow-empty" class="px-3 py-8 text-center text-slate-400 text-sm {% if flows %}hidden{% endif %}">
+        暂无流量。把手机/客户端的 HTTP(S) 代理设到 :9077 就会出现。
+    </div>
+</div>
+
+{# ============ 转规则弹窗 ============ #}
+<div id="rule-dialog" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-slate-900/40" data-dialog-close></div>
+    <div class="relative mx-auto mt-10 w-[min(720px,92vw)] max-h-[88vh] bg-white rounded shadow-lg flex flex-col">
+        <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+            <div class="text-sm font-semibold">把流量转为 mock 规则</div>
+            <button type="button" class="text-slate-400 hover:text-slate-600 text-lg leading-none" data-dialog-close>×</button>
+        </div>
+        <div id="rule-dialog-banner" class="hidden px-4 py-2 text-xs"></div>
+        <form id="rule-dialog-form" class="flex-1 overflow-auto px-4 py-3 space-y-3 text-sm">
+            <input type="hidden" name="enabled" value="1">
+            <div>
+                <label class="block text-xs text-slate-500 mb-1">规则名称</label>
+                <input name="name" type="text" required class="w-full border border-slate-300 rounded px-2 py-1 font-mono text-xs">
+            </div>
+            <div class="grid grid-cols-[1fr_120px_120px] gap-2">
+                <div>
+                    <label class="block text-xs text-slate-500 mb-1">URL Pattern (fnmatch 通配符: * ? [seq])</label>
+                    <input name="url_pattern" type="text" required class="w-full border border-slate-300 rounded px-2 py-1 font-mono text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-500 mb-1">方法</label>
+                    <select name="method" class="w-full border border-slate-300 rounded px-2 py-1 text-xs">
+                        <option value="*">*</option>
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="DELETE">DELETE</option>
+                        <option value="PATCH">PATCH</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-500 mb-1">状态码</label>
+                    <input name="status_code" type="number" min="100" max="599" class="w-full border border-slate-300 rounded px-2 py-1 font-mono text-xs">
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button type="button" id="btn-strip-query" class="text-xs px-2 py-0.5 border border-slate-300 rounded hover:bg-slate-100">去掉 query 并加 *</button>
+                <button type="button" id="btn-restore-url" class="text-xs px-2 py-0.5 border border-slate-300 rounded hover:bg-slate-100">还原原始 URL</button>
+            </div>
+            <div>
+                <label class="block text-xs text-slate-500 mb-1">Response Headers (JSON)</label>
+                <textarea name="response_headers" rows="4" class="w-full border border-slate-300 rounded px-2 py-1 font-mono text-xs"></textarea>
+                <div class="text-xs text-slate-400 mt-0.5">已自动剔除 content-length / transfer-encoding / content-encoding / connection / keep-alive</div>
+            </div>
+            <div>
+                <label class="block text-xs text-slate-500 mb-1">Response Body</label>
+                <textarea name="response_body" rows="8" class="w-full border border-slate-300 rounded px-2 py-1 font-mono text-xs"></textarea>
+                <div id="body-warn" class="hidden text-xs mt-0.5"></div>
+            </div>
+        </form>
+        <div class="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+            <button type="button" class="text-xs px-3 py-1 border border-slate-300 rounded hover:bg-slate-100" data-dialog-close>取消</button>
+            <button type="button" id="btn-create-rule" class="text-xs px-3 py-1 border border-emerald-500 bg-emerald-500 text-white rounded hover:bg-emerald-600">创建规则</button>
+        </div>
+    </div>
+</div>
+
+{# ============ Toast ============ #}
+<div id="toast" class="fixed bottom-6 right-6 z-50 hidden px-3 py-2 rounded shadow-lg text-sm text-white"></div>
+
+<script>
+(function () {
+    const rowsEl = document.getElementById('flow-rows');
+    const emptyEl = document.getElementById('flow-empty');
+    const statusEl = document.getElementById('conn-status');
+    const btnClear = document.getElementById('btn-clear');
+    const btnPause = document.getElementById('btn-pause');
+    const filterHit = document.getElementById('filter-hit-only');
+
+    let paused = false;
+    let hitOnly = false;
+    const MAX_ROWS = 1000;
+
+    function fmtTime(ts) {
+        const d = new Date(ts * 1000);
+        const p = (n) => String(n).padStart(2, '0');
+        return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    }
+
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;');
+    }
+
+    function statusClass(code) {
+        if (!code) return 'text-slate-400';
+        if (code >= 500) return 'text-rose-600';
+        if (code >= 400) return 'text-amber-600';
+        if (code >= 300) return 'text-sky-600';
+        return 'text-emerald-600';
+    }
+
+    function buildRow(rec) {
+        const tr = document.createElement('tr');
+        tr.className = 'flow-row border-t border-slate-100 cursor-pointer hover:bg-slate-50' +
+            (rec.rule_id ? ' bg-amber-50/60 hover:bg-amber-100/60' : '');
+        tr.dataset.flowId = rec.id;
+        tr.dataset.hit = rec.rule_id ? '1' : '0';
+        const disabled = !rec.status;
+        tr.innerHTML = `
+            <td class="px-2 py-1.5 font-mono text-xs text-slate-500">${fmtTime(rec.ts)}</td>
+            <td class="px-2 py-1.5 font-mono text-xs">${escapeHtml(rec.method)}</td>
+            <td class="px-2 py-1.5 font-mono text-xs ${statusClass(rec.status)}">${rec.status || '-'}</td>
+            <td class="px-2 py-1.5 font-mono text-xs truncate" title="${escapeHtml(rec.url)}">${escapeHtml(rec.url)}</td>
+            <td class="px-2 py-1.5 text-xs text-amber-700 truncate" title="${rec.rule_name ? '#' + rec.rule_id + ' ' + escapeHtml(rec.rule_name) : ''}">${rec.rule_name ? '#' + rec.rule_id + ' ' + escapeHtml(rec.rule_name) : ''}</td>
+            <td class="px-2 py-1.5 font-mono text-xs text-slate-500 text-right">${rec.duration_ms}ms</td>
+            <td class="px-2 py-1.5 text-center">
+                <button type="button" class="btn-to-rule text-xs px-2 py-0.5 border border-slate-300 rounded hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700"
+                        data-flow-id="${rec.id}" ${disabled ? 'disabled title="请求未完成"' : 'title="把这条流量转为 mock 规则"'}>+ 规则</button>
+            </td>
+        `;
+        // 点击行展开详情；按钮自带 stopPropagation
+        tr.addEventListener('click', (e) => {
+            if (e.target.closest('.btn-to-rule')) return;
+            toggleDetail(tr, rec);
+        });
+        const btn = tr.querySelector('.btn-to-rule');
+        if (btn && !disabled) {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openRuleDialogByFlowId(rec.id);
+            });
+        }
+        return tr;
+    }
+
+    function toggleDetail(rowEl, rec) {
+        const next = rowEl.nextElementSibling;
+        if (next && next.classList.contains('flow-detail')) {
+            next.remove();
+            return;
+        }
+        const det = document.createElement('tr');
+        det.className = 'flow-detail bg-slate-50 border-t border-slate-100';
+        det.innerHTML = `
+            <td colspan="7" class="px-3 py-3 text-xs">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <div class="font-semibold text-slate-600 mb-1">Request Headers</div>
+                        <pre class="bg-white border border-slate-200 rounded p-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">${escapeHtml(JSON.stringify(rec.req_headers, null, 2))}</pre>
+                        <div class="font-semibold text-slate-600 mt-2 mb-1">Request Body${rec.req_body_truncated ? ' <span class="text-rose-600 font-normal">(已截断)</span>' : ''}</div>
+                        <pre class="bg-white border border-slate-200 rounded p-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">${escapeHtml(rec.req_body) || '<span class="text-slate-400">(空)</span>'}</pre>
+                    </div>
+                    <div>
+                        <div class="font-semibold text-slate-600 mb-1">Response Headers</div>
+                        <pre class="bg-white border border-slate-200 rounded p-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">${escapeHtml(JSON.stringify(rec.resp_headers, null, 2))}</pre>
+                        <div class="font-semibold text-slate-600 mt-2 mb-1">Response Body${rec.resp_body_truncated ? ' <span class="text-rose-600 font-normal">(已截断)</span>' : ''}</div>
+                        <pre class="bg-white border border-slate-200 rounded p-2 max-h-48 overflow-auto whitespace-pre-wrap break-all">${escapeHtml(rec.resp_body) || '<span class="text-slate-400">(空)</span>'}</pre>
+                    </div>
+                </div>
+            </td>
+        `;
+        rowEl.after(det);
+    }
+
+    function applyFilter() {
+        rowsEl.querySelectorAll('tr.flow-row').forEach(tr => {
+            const isHit = tr.dataset.hit === '1';
+            tr.style.display = (hitOnly && !isHit) ? 'none' : '';
+            // 同步隐藏紧跟的详情行
+            const next = tr.nextElementSibling;
+            if (next && next.classList.contains('flow-detail')) {
+                next.style.display = tr.style.display;
+            }
+        });
+    }
+
+    function appendRecord(rec) {
+        if (paused) return;
+        const tr = buildRow(rec);
+        // 新的插到顶部
+        if (rowsEl.firstChild) {
+            rowsEl.insertBefore(tr, rowsEl.firstChild);
+        } else {
+            rowsEl.appendChild(tr);
+        }
+        emptyEl.classList.add('hidden');
+        // 超出 MAX_ROWS 砍尾
+        const all = rowsEl.querySelectorAll('tr.flow-row');
+        if (all.length > MAX_ROWS) {
+            for (let i = MAX_ROWS; i < all.length; i++) {
+                const t = all[i];
+                const n = t.nextElementSibling;
+                if (n && n.classList.contains('flow-detail')) n.remove();
+                t.remove();
+            }
+        }
+        // 应用当前过滤
+        if (hitOnly && rec.rule_id == null) tr.style.display = 'none';
+    }
+
+    btnClear.addEventListener('click', async () => {
+        try {
+            await fetch('/flows/clear', { method: 'POST' });
+        } catch (e) {
+            console.error('清空失败', e);
+        }
+        rowsEl.innerHTML = '';
+        emptyEl.classList.remove('hidden');
+    });
+
+    btnPause.addEventListener('click', () => {
+        paused = !paused;
+        btnPause.textContent = paused ? '继续' : '暂停';
+        btnPause.classList.toggle('bg-amber-100', paused);
+        btnPause.classList.toggle('text-amber-700', paused);
+    });
+
+    filterHit.addEventListener('change', () => {
+        hitOnly = filterHit.checked;
+        applyFilter();
+    });
+
+    // 初始绑定首屏行点击
+    rowsEl.querySelectorAll('tr.flow-row').forEach(tr => {
+        const id = parseInt(tr.dataset.flowId, 10);
+        tr.addEventListener('click', (e) => {
+            if (e.target.closest('.btn-to-rule')) return;
+            // 首屏只有 dataset，没原始数据，开请求拿吧——简单起见用空对象占位
+            // 这里直接吃 server 渲染好的属性即可，详情走 stream 里来的实时记录最准
+            // 为简化：首屏不支持展开，提示用户
+            const next = tr.nextElementSibling;
+            if (next && next.classList.contains('flow-detail')) { next.remove(); return; }
+            const det = document.createElement('tr');
+            det.className = 'flow-detail bg-slate-50 border-t border-slate-100';
+            det.innerHTML = `<td colspan="7" class="px-3 py-3 text-xs text-slate-500">首屏快照仅含基础字段，刷新后新进来的流量可点击查看完整 headers/body。</td>`;
+            tr.after(det);
+        });
+        const btn = tr.querySelector('.btn-to-rule');
+        if (btn && !btn.disabled) {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openRuleDialogByFlowId(id);
+            });
+        }
+    });
+
+    // ============ 转规则弹窗 ============
+    const dialogEl = document.getElementById('rule-dialog');
+    const dialogForm = document.getElementById('rule-dialog-form');
+    const dialogBanner = document.getElementById('rule-dialog-banner');
+    const bodyWarn = document.getElementById('body-warn');
+    const btnCreate = document.getElementById('btn-create-rule');
+    const btnStripQuery = document.getElementById('btn-strip-query');
+    const btnRestoreUrl = document.getElementById('btn-restore-url');
+    const toastEl = document.getElementById('toast');
+
+    let originalUrl = '';
+
+    const STRIP_HEADERS = new Set([
+        'content-length', 'transfer-encoding', 'content-encoding',
+        'connection', 'keep-alive',
+    ]);
+
+    function showToast(msg, type) {
+        toastEl.textContent = msg;
+        toastEl.className = 'fixed bottom-6 right-6 z-50 px-3 py-2 rounded shadow-lg text-sm text-white ' +
+            (type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : 'bg-slate-700');
+        toastEl.classList.remove('hidden');
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(() => toastEl.classList.add('hidden'), 4000);
+    }
+
+    function urlPath(u) {
+        try {
+            const o = new URL(u);
+            return o.pathname || '/';
+        } catch (e) { return u; }
+    }
+
+    function buildName(method, url) {
+        const p = urlPath(url);
+        const s = `${method} ${p}`;
+        return s.length > 60 ? s.slice(0, 60) : s;
+    }
+
+    function stripQueryAndStar(u) {
+        const i = u.indexOf('?');
+        const base = i >= 0 ? u.slice(0, i) : u;
+        return base + '*';
+    }
+
+    function cleanHeaders(headers) {
+        const out = {};
+        for (const k in headers) {
+            if (STRIP_HEADERS.has(k.toLowerCase())) continue;
+            out[k] = headers[k];
+        }
+        return out;
+    }
+
+    function isBinaryPlaceholder(body) {
+        return typeof body === 'string' && body.startsWith('(二进制内容:');
+    }
+
+    function setBanner(msg, type) {
+        if (!msg) { dialogBanner.classList.add('hidden'); return; }
+        dialogBanner.textContent = msg;
+        dialogBanner.className = 'px-4 py-2 text-xs ' +
+            (type === 'error' ? 'bg-rose-50 text-rose-700 border-b border-rose-200'
+                : 'bg-amber-50 text-amber-700 border-b border-amber-200');
+        dialogBanner.classList.remove('hidden');
+    }
+
+    function openDialog() {
+        dialogEl.classList.remove('hidden');
+    }
+
+    function closeDialog() {
+        dialogEl.classList.add('hidden');
+        setBanner('');
+        bodyWarn.classList.add('hidden');
+    }
+
+    dialogEl.addEventListener('click', (e) => {
+        if (e.target.dataset.dialogClose !== undefined) closeDialog();
+    });
+
+    btnStripQuery.addEventListener('click', () => {
+        dialogForm.elements['url_pattern'].value = stripQueryAndStar(dialogForm.elements['url_pattern'].value);
+    });
+    btnRestoreUrl.addEventListener('click', () => {
+        dialogForm.elements['url_pattern'].value = originalUrl;
+    });
+
+    async function openRuleDialogByFlowId(flowId) {
+        let rec;
+        try {
+            const res = await fetch('/flows/' + flowId);
+            if (res.status === 404) { showToast('这条流量已不在缓冲区，无法转规则', 'error'); return; }
+            if (!res.ok) { showToast('获取流量详情失败 ' + res.status, 'error'); return; }
+            rec = await res.json();
+        } catch (e) {
+            showToast('网络错误：' + e.message, 'error'); return;
+        }
+
+        // 字段映射
+        originalUrl = rec.url || '';
+        dialogForm.elements['name'].value = buildName(rec.method, rec.url);
+        dialogForm.elements['url_pattern'].value = originalUrl;
+        dialogForm.elements['method'].value = rec.method || '*';
+        dialogForm.elements['status_code'].value = rec.status || 200;
+
+        const cleaned = cleanHeaders(rec.resp_headers || {});
+        dialogForm.elements['response_headers'].value = JSON.stringify(cleaned, null, 2);
+
+        // body 处理
+        const warns = [];
+        if (isBinaryPlaceholder(rec.resp_body)) {
+            dialogForm.elements['response_body'].value = '';
+            warns.push('原响应是二进制内容，已清空 body，请手动填入想返回的内容。');
+        } else {
+            dialogForm.elements['response_body'].value = rec.resp_body || '';
+        }
+        if (rec.resp_body_truncated) {
+            warns.push('响应体超过 64KB 已被截断，规则只能复现前 64KB。');
+        }
+        if (warns.length) {
+            bodyWarn.textContent = warns.join(' ');
+            bodyWarn.className = 'text-xs mt-0.5 text-rose-600';
+            bodyWarn.classList.remove('hidden');
+        } else {
+            bodyWarn.classList.add('hidden');
+        }
+
+        setBanner('');
+        openDialog();
+    }
+    // 暴露给行点击使用
+    window.openRuleDialogByFlowId = openRuleDialogByFlowId;
+
+    btnCreate.addEventListener('click', async () => {
+        // 校验 headers JSON
+        const headersStr = dialogForm.elements['response_headers'].value.trim() || '{}';
+        try { JSON.parse(headersStr); }
+        catch (e) { setBanner('Response Headers 不是合法 JSON: ' + e.message, 'error'); return; }
+
+        const fd = new FormData(dialogForm);
+        // 确保 headers 是规范化的字符串
+        fd.set('response_headers', headersStr);
+
+        btnCreate.disabled = true;
+        try {
+            const res = await fetch('/rules', { method: 'POST', body: fd });
+            const trigger = res.headers.get('HX-Trigger');
+            // web.py: 冲突时返回 200 + HX-Trigger showToast + 空 body；
+            //         成功时返回 200 + text/html（规则列表片段）
+            if (trigger && trigger.indexOf('showToast') >= 0) {
+                let msg = '创建失败';
+                try {
+                    const obj = JSON.parse(trigger);
+                    msg = obj.showToast?.message || msg;
+                } catch (e) {}
+                setBanner(msg, 'error');
+                return;
+            }
+            if (!res.ok) {
+                const text = await res.text();
+                setBanner('创建失败 ' + res.status + ' ' + text.slice(0, 200), 'error');
+                return;
+            }
+            closeDialog();
+            showToast('规则已创建，去 /rules 查看', 'success');
+        } catch (e) {
+            setBanner('网络错误：' + e.message, 'error');
+        } finally {
+            btnCreate.disabled = false;
+        }
+    });
+
+    // SSE 连接
+    const es = new EventSource('/flows/stream');
+    es.addEventListener('hello', () => {
+        statusEl.textContent = '已连接';
+        statusEl.className = 'text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700';
+    });
+    es.onmessage = (ev) => {
+        try {
+            const rec = JSON.parse(ev.data);
+            appendRecord(rec);
+        } catch (e) {
+            console.error('解析 SSE 失败', e);
+        }
+    };
+    es.onerror = () => {
+        statusEl.textContent = '断开（自动重连中）';
+        statusEl.className = 'text-xs px-2 py-0.5 rounded bg-rose-100 text-rose-700';
+    };
+})();
+</script>
+{% endblock %}

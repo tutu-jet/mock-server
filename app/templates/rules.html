@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}规则 · mock-server{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-semibold">规则</h1>
+    <button class="bg-slate-900 text-white text-sm px-3 py-1.5 rounded hover:bg-slate-700"
+            onclick="document.getElementById('new-rule').classList.toggle('hidden')">
+        + 新建规则
+    </button>
+</div>
+
+<form id="new-rule" class="hidden bg-white border border-slate-200 rounded p-4 mb-4 space-y-3"
+      hx-post="/rules" hx-target="#rule-list" hx-swap="outerHTML"
+      hx-on::after-request="if(event.detail.successful){this.reset();this.classList.add('hidden');}">
+    {% include "_rule_form_fields.html" %}
+    <div class="flex gap-2">
+        <button type="submit" class="bg-slate-900 text-white text-sm px-3 py-1.5 rounded">保存</button>
+        <button type="button" class="text-sm px-3 py-1.5 rounded border border-slate-300"
+                onclick="document.getElementById('new-rule').classList.add('hidden')">取消</button>
+    </div>
+</form>
+
+{% include "_rule_list.html" %}
+
+{% endblock %}

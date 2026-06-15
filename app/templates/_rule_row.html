@@ -1,0 +1,20 @@
+<tr class="border-t border-slate-100" id="rule-row-{{ rule.id }}">
+    <td class="px-3 py-2">
+        <button class="px-2 py-0.5 rounded text-xs {% if rule.enabled %}bg-emerald-100 text-emerald-700{% else %}bg-slate-100 text-slate-500{% endif %}"
+                hx-post="/rules/{{ rule.id }}/toggle" hx-target="#rule-list" hx-swap="outerHTML">
+            {% if rule.enabled %}ON{% else %}OFF{% endif %}
+        </button>
+    </td>
+    <td class="px-3 py-2 font-medium">{{ rule.name }}</td>
+    <td class="px-3 py-2 font-mono text-xs">{{ rule.method }}</td>
+    <td class="px-3 py-2 font-mono text-xs text-slate-600 max-w-xs truncate" title="{{ rule.url_pattern }}">{{ rule.url_pattern }}</td>
+    <td class="px-3 py-2">{{ rule.status_code }}</td>
+    <td class="px-3 py-2 text-slate-500">{{ rule.match_count }}</td>
+    <td class="px-3 py-2 text-right whitespace-nowrap">
+        <button class="text-xs text-slate-600 hover:text-slate-900 mr-3"
+                hx-get="/rules/{{ rule.id }}/edit" hx-target="#rule-row-{{ rule.id }}" hx-swap="outerHTML">编辑</button>
+        <button class="text-xs text-rose-600 hover:text-rose-800"
+                hx-delete="/rules/{{ rule.id }}" hx-target="#rule-list" hx-swap="outerHTML"
+                hx-confirm="删除该规则？">删除</button>
+    </td>
+</tr>

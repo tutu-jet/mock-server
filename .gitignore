@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+
+# 运行时数据
+data/*.db
+data/*.db-journal
+
+# 系统
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp

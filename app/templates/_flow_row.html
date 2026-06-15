@@ -1,0 +1,22 @@
+{# 首屏快照行；只渲染基础字段，不含 headers/body（详情靠 SSE 来的实时记录） #}
+<tr class="flow-row border-t border-slate-100 cursor-pointer hover:bg-slate-50{% if f.rule_id %} bg-amber-50/60 hover:bg-amber-100/60{% endif %}"
+    data-flow-id="{{ f.id }}" data-hit="{{ '1' if f.rule_id else '0' }}">
+    <td class="px-2 py-1.5 font-mono text-xs text-slate-500">{{ f.time_str }}</td>
+    <td class="px-2 py-1.5 font-mono text-xs">{{ f.method }}</td>
+    <td class="px-2 py-1.5 font-mono text-xs
+        {% if f.status >= 500 %}text-rose-600
+        {% elif f.status >= 400 %}text-amber-600
+        {% elif f.status >= 300 %}text-sky-600
+        {% elif f.status %}text-emerald-600
+        {% else %}text-slate-400{% endif %}">{{ f.status or '-' }}</td>
+    <td class="px-2 py-1.5 font-mono text-xs truncate" title="{{ f.url }}">{{ f.url }}</td>
+    <td class="px-2 py-1.5 text-xs text-amber-700 truncate" title="{% if f.rule_id %}#{{ f.rule_id }} {{ f.rule_name }}{% endif %}">
+        {% if f.rule_id %}#{{ f.rule_id }} {{ f.rule_name }}{% endif %}
+    </td>
+    <td class="px-2 py-1.5 font-mono text-xs text-slate-500 text-right">{{ f.duration_ms }}ms</td>
+    <td class="px-2 py-1.5 text-center">
+        <button type="button" class="btn-to-rule text-xs px-2 py-0.5 border border-slate-300 rounded hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700"
+                data-flow-id="{{ f.id }}"
+                {% if not f.status %}disabled title="请求未完成"{% else %}title="把这条流量转为 mock 规则"{% endif %}>+ 规则</button>
+    </td>
+</tr>

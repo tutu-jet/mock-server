@@ -1,0 +1,13 @@
+<tr class="border-t border-slate-100 bg-slate-50" id="rule-row-{{ rule.id }}">
+<td colspan="7" class="px-3 py-3">
+<form class="space-y-3"
+      hx-post="/rules/{{ rule.id }}/edit" hx-target="#rule-list" hx-swap="outerHTML">
+    {% include "_rule_form_fields.html" %}
+    <div class="flex gap-2">
+        <button type="submit" class="bg-slate-900 text-white text-sm px-3 py-1.5 rounded">保存</button>
+        <button type="button" class="text-sm px-3 py-1.5 rounded border border-slate-300"
+                hx-get="/rules/{{ rule.id }}/cancel" hx-target="#rule-row-{{ rule.id }}" hx-swap="outerHTML">取消</button>
+    </div>
+</form>
+</td>
+</tr>
