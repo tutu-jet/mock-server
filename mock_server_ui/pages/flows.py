@@ -211,9 +211,7 @@ def _detail_drawer() -> rx.Component:
                                 "另存为规则",
                                 on_click=[
                                     FlowsState.deselect,
-                                    RulesState.open_create_from_flow(
-                                        f.method, f.url, f.resp_body
-                                    ),
+                                    RulesState.open_create_from_flow(f.id),
                                 ],
                                 color_scheme="iris",
                                 variant="soft",

@@ -51,7 +51,7 @@ def _sidebar() -> rx.Component:
         rx.divider(),
         # 导航
         rx.vstack(
-            _nav_item("list-checks", "规则", "/"),
+            _nav_item("list-checks", "规则", "/rules"),
             _nav_item("activity", "流量", "/flows"),
             _nav_item("settings", "设置", "/settings"),
             spacing="1",

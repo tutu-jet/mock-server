@@ -43,9 +43,20 @@ app = rx.App()
 
 app.add_page(
     rules_page,
-    route="/",
+    route="/rules",
     title="规则 · mock-server",
     on_load=RulesState.load,
+)
+# / 重定向到 /rules（用 spinner 占位，避免 React Router HMR 找不到空路由模块）
+app.add_page(
+    lambda: rx.center(
+        rx.spinner(size="3"),
+        height="100vh",
+        width="100%",
+    ),
+    route="/",
+    title="mock-server",
+    on_load=rx.redirect("/rules"),
 )
 app.add_page(
     flows_page,

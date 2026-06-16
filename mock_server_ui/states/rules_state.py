@@ -11,8 +11,12 @@ from typing import Optional
 import reflex as rx
 
 from app import models
+from app import flows
 from app.matcher import matcher
 from app.models import ALLOWED_METHODS
+
+# 表单 body 再次截断上限：避免 textarea + WS state 同步卡死
+FORM_BODY_MAX = 32 * 1024
 
 
 @dataclass
@@ -115,17 +119,30 @@ class RulesState(rx.State):
         self.drawer_open = True
 
     @rx.event
-    def open_create_from_flow(self, method: str, url: str, body: str):
+    def open_create_from_flow(self, flow_id: int):
+        """从流量页跳过来。前端只传 flow_id，body 在后端取，避免大 payload 走 WS。"""
+        rec = flows.buffer.get(flow_id)
+        if not rec:
+            return self._toast("流量已过期，无法另存", "error")
+        body = rec.resp_body or ""
+        truncated_msg = ""
+        if len(body) > FORM_BODY_MAX:
+            body = body[:FORM_BODY_MAX]
+            truncated_msg = f"（响应体过大，已截断到 {FORM_BODY_MAX // 1024}KB）"
         self.editing_id = -1
-        self.f_name = f"from flow {method} {url[:40]}"
-        self.f_url = url
-        self.f_method = method if method in ALLOWED_METHODS else "*"
-        self.f_status = "200"
+        self.f_name = f"from flow {rec.method} {rec.url[:40]}"
+        self.f_url = rec.url
+        self.f_method = rec.method if rec.method in ALLOWED_METHODS else "*"
+        self.f_status = str(rec.status or 200)
         self.f_headers = "{}"
-        self.f_body = body or ""
+        self.f_body = body
         self.f_enabled = True
         self.drawer_open = True
-        return rx.redirect("/rules")
+        # 切到规则页 + 提示截断
+        events: list = [rx.redirect("/rules")]
+        if truncated_msg:
+            events.append(rx.toast(truncated_msg, duration=3500, close_button=True))
+        return events
 
     @rx.event
     def open_edit(self, rule_id: int):

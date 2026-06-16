@@ -28,7 +28,7 @@ def _rule_card(r: RuleVM) -> rx.Component:
                 ),
                 rx.switch(
                     checked=r.enabled,
-                    on_change=lambda _v, _id=r.id: RulesState.toggle(_id),
+                    on_change=lambda _v: RulesState.toggle(r.id),
                     color_scheme="iris",
                     size="2",
                 ),
@@ -70,7 +70,7 @@ def _rule_card(r: RuleVM) -> rx.Component:
                 rx.hstack(
                     rx.icon_button(
                         rx.icon("pencil", size=14),
-                        on_click=lambda _id=r.id: RulesState.open_edit(_id),
+                        on_click=RulesState.open_edit(r.id),
                         variant="soft",
                         color_scheme="gray",
                         size="1",
@@ -94,7 +94,7 @@ def _rule_card(r: RuleVM) -> rx.Component:
                                 rx.alert_dialog.action(
                                     rx.button(
                                         "删除",
-                                        on_click=lambda _id=r.id: RulesState.delete(_id),
+                                        on_click=RulesState.delete(r.id),
                                         color_scheme="red",
                                     ),
                                 ),
@@ -195,108 +195,142 @@ def _quick_status_chip(code: str) -> rx.Component:
     )
 
 
+def _field(label: str, *children, hint: str | None = None) -> rx.Component:
+    """统一表单字段：标签 + 可选 hint + 内容。"""
+    head = rx.hstack(
+        rx.text(label, size="2", weight="medium", color=rx.color("gray", 12)),
+        *(
+            [rx.text(hint, size="1", color=rx.color("gray", 10))]
+            if hint
+            else []
+        ),
+        spacing="2",
+        align="center",
+    )
+    return rx.vstack(
+        head,
+        *children,
+        spacing="2",
+        align="stretch",
+        width="100%",
+    )
+
+
 def _drawer() -> rx.Component:
     return rx.dialog.root(
         rx.dialog.content(
             rx.vstack(
+                # 标题栏：标题 + 启用开关 + 关闭
                 rx.hstack(
-                    rx.dialog.title(RulesState.drawer_title),
+                    rx.dialog.title(
+                        RulesState.drawer_title,
+                        margin="0",
+                    ),
                     rx.spacer(),
-                    rx.dialog.close(rx.icon_button(rx.icon("x", size=16), variant="ghost", color_scheme="gray")),
+                    rx.hstack(
+                        rx.text("启用", size="2", color=rx.color("gray", 11)),
+                        rx.switch(
+                            checked=RulesState.f_enabled,
+                            on_change=RulesState.set_f_enabled,
+                            color_scheme="iris",
+                            size="2",
+                        ),
+                        spacing="2",
+                        align="center",
+                    ),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=16),
+                            variant="ghost",
+                            color_scheme="gray",
+                        ),
+                    ),
                     width="100%",
                     align="center",
+                    spacing="3",
                 ),
                 rx.divider(),
                 # 名称
-                rx.vstack(
-                    rx.text("名称", size="2", weight="medium"),
+                _field(
+                    "名称",
                     rx.input(
                         value=RulesState.f_name,
                         on_change=RulesState.set_f_name,
                         placeholder="给这条规则起个名字",
                         size="3",
+                        width="100%",
                     ),
-                    spacing="1",
-                    align="start",
-                    width="100%",
                 ),
                 # URL pattern
-                rx.vstack(
-                    rx.hstack(
-                        rx.text("URL Pattern", size="2", weight="medium"),
-                        rx.text("支持 * 通配", size="1", color=rx.color("gray", 10)),
-                        spacing="2",
-                    ),
+                _field(
+                    "URL Pattern",
                     rx.input(
                         value=RulesState.f_url,
                         on_change=RulesState.set_f_url,
                         placeholder="例如 https://api.example.com/user/*",
                         size="3",
                         font_family="JetBrains Mono, monospace",
+                        width="100%",
                     ),
-                    spacing="1",
-                    align="start",
-                    width="100%",
+                    hint="支持 * 通配",
                 ),
-                # 方法 + 状态码 + 启用
-                rx.hstack(
-                    rx.vstack(
-                        rx.text("方法", size="2", weight="medium"),
+                # 方法 + 状态码（两列等宽）
+                rx.grid(
+                    _field(
+                        "方法",
                         rx.select(
                             RulesState.methods,
                             value=RulesState.f_method,
                             on_change=RulesState.set_f_method,
                             size="3",
+                            width="100%",
                         ),
-                        spacing="1",
-                        align="start",
                     ),
-                    rx.vstack(
-                        rx.text("状态码", size="2", weight="medium"),
+                    _field(
+                        "状态码",
                         rx.input(
                             value=RulesState.f_status,
                             on_change=RulesState.set_f_status,
                             size="3",
-                            width="100px",
+                            width="100%",
                         ),
-                        spacing="1",
-                        align="start",
                     ),
-                    rx.vstack(
-                        rx.text("常用", size="2", weight="medium"),
-                        rx.hstack(
-                            _quick_status_chip("200"),
-                            _quick_status_chip("204"),
-                            _quick_status_chip("400"),
-                            _quick_status_chip("401"),
-                            _quick_status_chip("404"),
-                            _quick_status_chip("500"),
-                            spacing="1",
-                            wrap="wrap",
-                        ),
-                        spacing="1",
-                        align="start",
-                    ),
-                    rx.spacer(),
-                    rx.vstack(
-                        rx.text("启用", size="2", weight="medium"),
-                        rx.switch(
-                            checked=RulesState.f_enabled,
-                            on_change=RulesState.set_f_enabled,
-                            color_scheme="iris",
-                            size="3",
-                        ),
-                        spacing="1",
-                        align="start",
-                    ),
+                    columns="2",
                     spacing="4",
-                    align="end",
+                    width="100%",
+                ),
+                # 快捷状态码
+                rx.hstack(
+                    rx.text(
+                        "常用",
+                        size="1",
+                        color=rx.color("gray", 10),
+                        margin_right="4px",
+                    ),
+                    _quick_status_chip("200"),
+                    _quick_status_chip("204"),
+                    _quick_status_chip("400"),
+                    _quick_status_chip("401"),
+                    _quick_status_chip("404"),
+                    _quick_status_chip("500"),
+                    spacing="2",
+                    wrap="wrap",
+                    align="center",
                     width="100%",
                 ),
                 # Headers
-                rx.vstack(
+                _field(
+                    "Response Headers (JSON)",
+                    rx.text_area(
+                        value=RulesState.f_headers,
+                        on_change=RulesState.set_f_headers,
+                        placeholder='{"Content-Type": "application/json"}',
+                        rows="4",
+                        font_family="JetBrains Mono, monospace",
+                        style={"font_size": "13px"},
+                        width="100%",
+                    ),
                     rx.hstack(
-                        rx.text("Response Headers (JSON)", size="2", weight="medium"),
                         rx.spacer(),
                         rx.button(
                             rx.icon("braces", size=14),
@@ -308,21 +342,10 @@ def _drawer() -> rx.Component:
                         ),
                         width="100%",
                     ),
-                    rx.text_area(
-                        value=RulesState.f_headers,
-                        on_change=RulesState.set_f_headers,
-                        placeholder='{"Content-Type": "application/json"}',
-                        rows="4",
-                        font_family="JetBrains Mono, monospace",
-                        style={"font_size": "13px"},
-                    ),
-                    spacing="1",
-                    align="start",
-                    width="100%",
                 ),
                 # Body
-                rx.vstack(
-                    rx.text("Response Body", size="2", weight="medium"),
+                _field(
+                    "Response Body",
                     rx.text_area(
                         value=RulesState.f_body,
                         on_change=RulesState.set_f_body,
@@ -330,23 +353,35 @@ def _drawer() -> rx.Component:
                         rows="8",
                         font_family="JetBrains Mono, monospace",
                         style={"font_size": "13px"},
+                        width="100%",
                     ),
-                    spacing="1",
-                    align="start",
-                    width="100%",
                 ),
                 rx.divider(),
+                # 底栏按钮
                 rx.hstack(
                     rx.spacer(),
                     rx.dialog.close(
-                        rx.button("取消", variant="soft", color_scheme="gray", size="2"),
+                        rx.button(
+                            "取消",
+                            variant="soft",
+                            color_scheme="gray",
+                            size="2",
+                        ),
                     ),
-                    rx.button("保存", on_click=RulesState.submit, color_scheme="iris", size="2"),
+                    rx.button(
+                        rx.icon("check", size=16),
+                        "保存",
+                        on_click=RulesState.submit,
+                        color_scheme="iris",
+                        size="2",
+                    ),
                     spacing="3",
                     width="100%",
+                    align="center",
                 ),
                 spacing="4",
                 width="100%",
+                align="stretch",
             ),
             max_width="640px",
             style={"max_height": "85vh", "overflow_y": "auto"},
