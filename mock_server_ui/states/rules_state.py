@@ -115,6 +115,19 @@ class RulesState(rx.State):
         self.drawer_open = True
 
     @rx.event
+    def open_create_from_flow(self, method: str, url: str, body: str):
+        self.editing_id = -1
+        self.f_name = f"from flow {method} {url[:40]}"
+        self.f_url = url
+        self.f_method = method if method in ALLOWED_METHODS else "*"
+        self.f_status = "200"
+        self.f_headers = "{}"
+        self.f_body = body or ""
+        self.f_enabled = True
+        self.drawer_open = True
+        return rx.redirect("/rules")
+
+    @rx.event
     def open_edit(self, rule_id: int):
         r = models.get_rule(rule_id)
         if not r:

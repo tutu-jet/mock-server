@@ -6,6 +6,7 @@ import reflex as rx
 from mock_server_ui.components.badges import method_badge, status_badge
 from mock_server_ui.components.layout import layout
 from mock_server_ui.states.flows_state import FlowsState, FlowVM
+from mock_server_ui.states.rules_state import RulesState
 
 
 def _flow_row(f: FlowVM) -> rx.Component:
@@ -60,7 +61,7 @@ def _flow_row(f: FlowVM) -> rx.Component:
             align="center",
             width="100%",
         ),
-        on_click=lambda _id=f.id: FlowsState.select(_id),
+        on_click=FlowsState.select(f.id),
         padding="10px 14px",
         border_radius="8px",
         background=rx.cond(is_selected, rx.color("iris", 3), "transparent"),
@@ -203,6 +204,20 @@ def _detail_drawer() -> rx.Component:
                                     variant="soft",
                                 ),
                                 rx.fragment(),
+                            ),
+                            rx.spacer(),
+                            rx.button(
+                                rx.icon("save", size=14),
+                                "另存为规则",
+                                on_click=[
+                                    FlowsState.deselect,
+                                    RulesState.open_create_from_flow(
+                                        f.method, f.url, f.resp_body
+                                    ),
+                                ],
+                                color_scheme="iris",
+                                variant="soft",
+                                size="2",
                             ),
                             spacing="3",
                             align="center",
