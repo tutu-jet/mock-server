@@ -5,7 +5,22 @@
   <span class="flow-time">{{ flow.ts | strftime("%H:%M:%S") }}</span>
   <span class="method method-{{ flow.method|lower if flow.method != '*' else 'any' }}">{{ flow.method }}</span>
   <span class="status status-{{ (flow.status // 100) if flow.status else 0 }}xx">{{ flow.status or '-' }}</span>
-  <span class="flow-url" title="{{ flow.url }}">{{ flow.url }}</span>
+  {% set _u = flow.url %}
+  {% set _scheme_end = _u.find('://') %}
+  {% set _after_scheme = _u[_scheme_end+3:] if _scheme_end >= 0 else _u %}
+  {% set _path_start = _after_scheme.find('/') %}
+  {% set _host = (_u[:_scheme_end+3] + _after_scheme[:_path_start]) if _path_start >= 0 else _u %}
+  {% set _path_q = _after_scheme[_path_start:] if _path_start >= 0 else '/' %}
+  {% set _q_start = _path_q.find('?') %}
+  {% set _path = _path_q[:_q_start] if _q_start >= 0 else _path_q %}
+  {% set _query = _path_q[_q_start:] if _q_start >= 0 else '' %}
+  <span class="flow-url" title="{{ flow.url }}">
+    <button type="button" class="flow-chip flow-chip-host"
+            data-popover-label="baseurl"
+            data-popover-value="{{ _host }}">baseurl</button><span class="flow-path">{{ _path }}</span>{% if _query %}<button type="button" class="flow-chip flow-chip-query"
+            data-popover-label="query"
+            data-popover-value="{{ _query }}">query</button>{% endif %}
+  </span>
   <span class="muted">{{ flow.duration_ms }}ms</span>
   <span class="flow-tail">
     {% if flow.rule_name %}<span class="hit-tag" title="命中规则 #{{ flow.rule_id }}">⊙ {{ flow.rule_name }}</span>{% endif %}

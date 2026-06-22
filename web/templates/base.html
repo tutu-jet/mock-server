@@ -99,6 +99,86 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
     setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 1500);
   }
 }
+
+// URL chip popover（baseurl / query）单例
+(function() {
+  let pop = null;
+  let activeChip = null;
+
+  function ensurePop() {
+    if (pop) return pop;
+    pop = document.createElement("div");
+    pop.className = "url-popover";
+    pop.innerHTML = `
+      <div class="url-popover-head">
+        <span class="url-popover-label"></span>
+        <button type="button" class="url-popover-copy">复制</button>
+      </div>
+      <div class="url-popover-value"></div>
+    `;
+    document.body.appendChild(pop);
+    pop.addEventListener("click", e => e.stopPropagation());
+    pop.querySelector(".url-popover-copy").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      const val = pop.querySelector(".url-popover-value").textContent;
+      const orig = btn.textContent;
+      try {
+        await navigator.clipboard.writeText(val);
+        btn.textContent = "已复制";
+      } catch {
+        btn.textContent = "失败";
+      }
+      setTimeout(() => { btn.textContent = orig; }, 1200);
+    });
+    return pop;
+  }
+
+  function closePop() {
+    if (!pop) return;
+    pop.classList.remove("show");
+    if (activeChip) { activeChip.classList.remove("active"); activeChip = null; }
+  }
+
+  function openPop(chip) {
+    const p = ensurePop();
+    p.querySelector(".url-popover-label").textContent = chip.dataset.popoverLabel || "";
+    p.querySelector(".url-popover-value").textContent = chip.dataset.popoverValue || "";
+    p.classList.add("show");
+    // 定位：chip 左下方，溢出右边时贴右边
+    const r = chip.getBoundingClientRect();
+    p.style.top = (r.bottom + 4) + "px";
+    p.style.left = "0px";
+    p.style.right = "auto";
+    const pr = p.getBoundingClientRect();
+    let left = r.left;
+    if (left + pr.width > window.innerWidth - 12) {
+      left = window.innerWidth - pr.width - 12;
+    }
+    if (left < 12) left = 12;
+    p.style.left = left + "px";
+    if (activeChip) activeChip.classList.remove("active");
+    activeChip = chip;
+    chip.classList.add("active");
+  }
+
+  document.addEventListener("click", e => {
+    const chip = e.target.closest(".flow-chip");
+    if (chip) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (activeChip === chip) { closePop(); }
+      else { openPop(chip); }
+      return;
+    }
+    if (pop && pop.contains(e.target)) return;
+    if (pop && pop.classList.contains("show")) closePop();
+  }, true);
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") closePop();
+  });
+  window.addEventListener("scroll", closePop, true);
+  window.addEventListener("resize", closePop);
+})();
 </script>
 {% block scripts %}{% endblock %}
 </body>

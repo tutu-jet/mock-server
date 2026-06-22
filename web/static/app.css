@@ -283,6 +283,84 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 .flow-url {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px;
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+}
+.flow-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color: var(--muted);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+}
+.flow-chip:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--bg-2);
+}
+.flow-chip.active {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--bg-2);
+}
+
+/* URL popover - 单例，由 JS 追加到 body */
+.url-popover {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  padding: 10px 12px;
+  max-width: 600px;
+  min-width: 240px;
+  font-size: 12px;
+  display: none;
+}
+.url-popover.show { display: block; }
+.url-popover-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 6px;
+}
+.url-popover-label {
+  font-size: 10px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.url-popover-copy {
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.url-popover-copy:hover {
+  color: var(--primary); border-color: var(--primary);
+}
+.url-popover-value {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  color: var(--text);
+  word-break: break-all;
+  white-space: pre-wrap;
+  user-select: text;
+  max-height: 240px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+.flow-path {
+  color: var(--text);
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .hit-tag {
   background: rgba(200, 149, 109, 0.18); color: #8a5a30;
@@ -465,4 +543,17 @@ nav { display: flex; flex-direction: column; gap: 4px; }
   border: 1px solid var(--warning);
   color: #9a6a20;
 }
+.banner-info {
+  background: rgba(90, 140, 217, 0.10);
+  border: 1px solid rgba(90, 140, 217, 0.55);
+  color: #335a8c;
+}
 .banner-actions { display: inline-flex; gap: 6px; margin-left: 6px; flex-wrap: wrap; }
+.banner-url {
+  white-space: nowrap;
+  overflow-x: auto;
+  margin: 4px 0;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}

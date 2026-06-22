@@ -398,6 +398,23 @@ def flow_save_as_rule_edit(flow_id: int):
         response_body=fields["response_body"],
         enabled=True,
     )
+    # 找一下用此预填 url_pattern + method 保存时会冲突的已启用规则（完全相同 pattern）
+    existing_rule = matcher.find_conflict(fields["url_pattern"], fields["method"])
+    # 兜底两种"非 enabled+完全相同"的情况：
+    #   - existing_disabled: 完全相同 pattern + method 但 disabled
+    #   - existing_wildcard: fnmatch 通配命中 flow 实际 URL 的已启用规则（pattern 不完全相同）
+    existing_disabled = None
+    existing_wildcard = None
+    if not existing_rule:
+        existing_disabled = _find_same_pattern_disabled(
+            fields["url_pattern"], fields["method"]
+        )
+        if not existing_disabled:
+            hit = matcher.match(rec.url, rec.method)
+            # match 可能命中"完全相同 pattern 且启用"那条（理论上 find_conflict 已经覆盖），
+            # 这里只在 pattern 不完全相同时才当作通配兜底
+            if hit and hit.url_pattern != fields["url_pattern"]:
+                existing_wildcard = hit
     return render(
         "_rule_form.html",
         rule=prefilled,
@@ -405,6 +422,9 @@ def flow_save_as_rule_edit(flow_id: int):
         from_flow=rec,
         from_flow_truncated=rec.resp_body_truncated,
         from_flow_binary=binary,
+        existing_rule=existing_rule,
+        existing_disabled=existing_disabled,
+        existing_wildcard=existing_wildcard,
     )
 
 
@@ -434,6 +454,18 @@ def help_page():
 
 
 # ---------- 内部工具 ----------
+
+def _find_same_pattern_disabled(url_pattern: str, method: str):
+    """找一条已禁用、url_pattern 完全相同、method 兼容（同名或一方是 *）的规则。"""
+    for rule in models.list_rules():
+        if rule.enabled:
+            continue
+        if rule.url_pattern != url_pattern:
+            continue
+        if rule.method == method or rule.method == "*" or method == "*":
+            return rule
+    return None
+
 
 def _filter_rules(rules, q: str, method: str, enabled_only: bool):
     out = rules
