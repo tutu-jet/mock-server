@@ -22,7 +22,9 @@ import json
 import socket
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
@@ -257,6 +259,111 @@ def flows_clear():
         import logging
         logging.getLogger("mock-server").warning(f"clear_flow_bodies 失败: {e}")
     return Response(status_code=200)
+
+
+# ---------- 从流量保存为规则 ----------
+
+def _build_rule_from_flow(rec) -> dict:
+    """从 FlowRecord 构造规则字段（用内存预览版 body，截断时由 UI 提示用户自己改）。"""
+    path = urlparse(rec.url).path or "/"
+    name = f"{rec.method} {path}"[:80]
+    # headers 白名单：只保留 content-type，丢弃 length/encoding/cookie 等
+    ct = ""
+    for k, v in (rec.resp_headers or {}).items():
+        if k.lower() == "content-type":
+            ct = v
+            break
+    headers_obj = {"Content-Type": ct} if ct else {}
+    return {
+        "name": name,
+        "url_pattern": path,
+        "method": rec.method,
+        "status_code": rec.status or 200,
+        "response_headers": json.dumps(headers_obj, ensure_ascii=False),
+        "response_body": rec.resp_body or "",
+        "content_type": ct,
+    }
+
+
+def _is_binary_resp(rec) -> bool:
+    """根据 resp content-type 判断是否二进制。空 body 不算二进制。"""
+    if not rec.resp_body_size:
+        return False
+    ct = ""
+    for k, v in (rec.resp_headers or {}).items():
+        if k.lower() == "content-type":
+            ct = v
+            break
+    if not ct:
+        return False
+    return not flows._TEXTUAL_RE.match(ct.strip())
+
+
+@router.post("/flows/{flow_id}/save-as-rule", response_class=HTMLResponse)
+def flow_save_as_rule(flow_id: int):
+    """一键把流量保存为规则。截断的 body 仍保存（用内存预览版），并在 toast 里提示用户去详情页拿完整版。"""
+    rec = flows.buffer.get(flow_id)
+    if not rec:
+        return _toast_resp("流量已被清空或挤出缓冲", "error")
+    if _is_binary_resp(rec):
+        return _toast_resp("二进制响应不支持一键保存，请用「编辑后保存」或手动新建规则", "error")
+
+    fields = _build_rule_from_flow(rec)
+    conflict = matcher.find_conflict(fields["url_pattern"], fields["method"], exclude_id=None)
+    new_id = models.create_rule(
+        name=fields["name"],
+        url_pattern=fields["url_pattern"],
+        method=fields["method"],
+        status_code=fields["status_code"],
+        response_headers=fields["response_headers"],
+        response_body=fields["response_body"],
+        enabled=True,
+    )
+    matcher.reload_from_db()
+
+    # 组合 toast：截断 + 冲突可能同时存在
+    parts = [f"已保存为规则 #{new_id}"]
+    kind = "success"
+    if rec.resp_body_truncated:
+        full = flows.human_bytes(rec.resp_body_size)
+        parts.append(f"⚠️ body 被截断（原始 {full}），请到流量 #{flow_id} 详情页下载/复制完整 body 后编辑规则")
+        kind = "info"
+    if conflict:
+        parts.append(f"⚠️ 与规则 #{conflict.id}「{conflict.name}」冲突，请到规则页调整")
+        kind = "info"
+    return _toast_resp("；".join(parts), kind)
+
+
+@router.get("/flows/{flow_id}/save-as-rule/edit", response_class=HTMLResponse)
+def flow_save_as_rule_edit(flow_id: int):
+    """打开抽屉表单，预填字段，用户编辑后走 POST /rules 创建。"""
+    rec = flows.buffer.get(flow_id)
+    if not rec:
+        return render("_flow_expired.html")
+    binary = _is_binary_resp(rec)
+    fields = _build_rule_from_flow(rec)
+    if binary:
+        # 二进制：body 留空，由 banner 提示用户自己处理
+        fields["response_body"] = ""
+    # 模板用 rule.xxx 属性访问，封装成 SimpleNamespace；id=None 让模板走"新建"分支
+    prefilled = SimpleNamespace(
+        id=None,
+        name=fields["name"],
+        url_pattern=fields["url_pattern"],
+        method=fields["method"],
+        status_code=fields["status_code"],
+        response_headers=fields["response_headers"],
+        response_body=fields["response_body"],
+        enabled=True,
+    )
+    return render(
+        "_rule_form.html",
+        rule=prefilled,
+        methods=METHODS,
+        from_flow=rec,
+        from_flow_truncated=rec.resp_body_truncated,
+        from_flow_binary=binary,
+    )
 
 
 # ---------- 帮助页 ----------

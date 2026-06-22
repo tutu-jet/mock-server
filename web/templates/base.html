@@ -77,6 +77,28 @@ async function copyFlowBody(flowId, kind, btn) {
     setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 1500);
   }
 }
+
+// 拉取流量完整 body 并填入规则表单的 textarea（从流量保存为规则 - 截断场景）
+async function copyFlowBodyToTextarea(flowId, kind, btn) {
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "...";
+  try {
+    const resp = await fetch(`/flows/${flowId}/body/${kind}?inline=1`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    const ta = document.getElementById("rule-form-body");
+    if (!ta) throw new Error("未找到 textarea");
+    ta.value = text;
+    btn.textContent = "已填入";
+    document.body.dispatchEvent(new CustomEvent("toast", {detail: {kind: "success", msg: `已填入完整 body（${text.length} 字符）`}}));
+  } catch (e) {
+    btn.textContent = "失败";
+    document.body.dispatchEvent(new CustomEvent("toast", {detail: {kind: "error", msg: `填入失败: ${e.message}`}}));
+  } finally {
+    setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 1500);
+  }
+}
 </script>
 {% block scripts %}{% endblock %}
 </body>

@@ -288,6 +288,21 @@ nav { display: flex; flex-direction: column; gap: 4px; }
   background: rgba(200, 149, 109, 0.18); color: #8a5a30;
   border-radius: 4px; padding: 1px 6px; font-size: 11px;
 }
+.flow-tail { display: inline-flex; align-items: center; gap: 6px; justify-self: end; }
+.flow-save-btn {
+  font-size: 11px; font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s, border-color 0.1s, background 0.1s;
+}
+.flow-row:hover .flow-save-btn { opacity: 1; }
+.flow-save-btn:hover { color: var(--primary); border-color: var(--primary); background: var(--bg-2); }
 
 .flow-detail { gap: 0; }
 .detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -413,3 +428,34 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 .toast-error { border-color: var(--danger); color: #9a3a30; }
 .toast-success { border-color: var(--success); color: #5a7a2a; }
 .toast-info { border-color: var(--info); color: #4a6e8a; }
+.toast-warning { border-color: var(--warning); color: #9a6a20; }
+
+/* 详情头右上角操作按钮 */
+.detail-head-actions { margin-left: auto; display: inline-flex; gap: 6px; }
+.btn-mini {
+  font-size: 11px; font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+}
+.btn-mini:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-mini.btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+.btn-mini.btn-ghost:hover { color: var(--primary); border-color: var(--primary); background: var(--bg-2); }
+
+/* 表单顶部 banner（截断 / 二进制提示） */
+.banner {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+.banner-warn {
+  background: rgba(217, 168, 90, 0.12);
+  border: 1px solid var(--warning);
+  color: #9a6a20;
+}
+.banner-actions { display: inline-flex; gap: 6px; margin-left: 6px; flex-wrap: wrap; }

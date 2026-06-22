@@ -7,5 +7,13 @@
   <span class="status status-{{ (flow.status // 100) if flow.status else 0 }}xx">{{ flow.status or '-' }}</span>
   <span class="flow-url" title="{{ flow.url }}">{{ flow.url }}</span>
   <span class="muted">{{ flow.duration_ms }}ms</span>
-  {% if flow.rule_name %}<span class="hit-tag" title="命中规则 #{{ flow.rule_id }}">⊙ {{ flow.rule_name }}</span>{% endif %}
+  <span class="flow-tail">
+    {% if flow.rule_name %}<span class="hit-tag" title="命中规则 #{{ flow.rule_id }}">⊙ {{ flow.rule_name }}</span>{% endif %}
+    <button type="button" class="flow-save-btn"
+            title="一键保存为规则"
+            hx-post="/flows/{{ flow.id }}/save-as-rule"
+            hx-swap="none"
+            hx-trigger="click consume"
+            onclick="event.stopPropagation()">＋规则</button>
+  </span>
 </div>

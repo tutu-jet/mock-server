@@ -1,15 +1,30 @@
 <div class="drawer-overlay">
   <div class="drawer" onclick="event.stopPropagation()">
     <div class="drawer-head">
-      <h3>{% if rule %}编辑规则 #{{ rule.id }}{% else %}新建规则{% endif %}</h3>
+      <h3>{% if rule and rule.id %}编辑规则 #{{ rule.id }}{% elif from_flow %}从流量 #{{ from_flow.id }} 保存为规则{% else %}新建规则{% endif %}</h3>
       <button class="icon-btn" onclick="document.getElementById('drawer-root').innerHTML=''" title="关闭">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <form class="drawer-body"
-          hx-post="{% if rule %}/rules/{{ rule.id }}{% else %}/rules{% endif %}"
+          hx-post="{% if rule and rule.id %}/rules/{{ rule.id }}{% else %}/rules{% endif %}"
           hx-target="#drawer-root"
           hx-swap="innerHTML">
+      {% if from_flow_binary %}
+      <div class="banner banner-warn">
+        ⚠️ 该响应是二进制内容（{{ from_flow.resp_body_size | human_bytes }}），无法作为 mock body 文本保存。
+        Response Body 已留空，请手动填写文本内容。
+      </div>
+      {% elif from_flow_truncated %}
+      <div class="banner banner-warn">
+        ⚠️ 该响应原始大小 {{ from_flow.resp_body_size | human_bytes }}，预览仅展示前 {{ MAX_BODY_BYTES | human_bytes }}（已截断）。
+        下方 Response Body 是<strong>截断版</strong>，保存为规则前请点这里替换完整 body：
+        <span class="banner-actions">
+          <button type="button" class="body-btn" onclick="copyFlowBodyToTextarea({{ from_flow.id }}, 'resp', this)">复制到下方 Body</button>
+          <a class="body-btn" href="/flows/{{ from_flow.id }}/body/resp" download>下载完整 body</a>
+        </span>
+      </div>
+      {% endif %}
       <label class="field">
         <span>名称</span>
         <input class="input" name="name" required value="{{ rule.name if rule else '' }}">
@@ -45,7 +60,7 @@
       </label>
       <label class="field">
         <span>Response Body</span>
-        <textarea class="textarea mono" name="response_body" rows="10" placeholder="JSON 字符串或纯文本">{{ rule.response_body if rule else '' }}</textarea>
+        <textarea class="textarea mono" id="rule-form-body" name="response_body" rows="10" placeholder="JSON 字符串或纯文本">{{ rule.response_body if rule else '' }}</textarea>
       </label>
       <label class="switch-inline">
         <input type="checkbox" name="enabled" {% if not rule or rule.enabled %}checked{% endif %}>
