@@ -29,6 +29,9 @@
   <button class="btn btn-ghost"
           hx-delete="/flows"
           hx-confirm="清空所有流量？"
+          data-confirm-kind="danger"
+          data-confirm-title="清空流量"
+          data-confirm-ok="清空"
           hx-target="#flows-list"
           hx-swap="innerHTML"
           onclick="setTimeout(()=>{document.getElementById('flows-total').textContent='0';document.getElementById('flows-hit').textContent='0';},100)">

@@ -495,6 +495,51 @@ nav { display: flex; flex-direction: column; gap: 4px; }
   line-height: 1.6;
 }
 
+/* confirm modal */
+.confirm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(74, 61, 36, 0.36);
+  z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.12s;
+}
+.confirm-modal {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 420px; max-width: calc(100vw - 32px);
+  padding: 20px 22px 16px;
+  box-shadow: 0 16px 40px rgba(74, 61, 36, 0.22);
+  animation: confirmPop 0.14s ease-out;
+}
+@keyframes confirmPop {
+  from { transform: translateY(6px) scale(0.98); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+.confirm-title {
+  font-size: 15px; font-weight: 600;
+  margin: 0 0 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.confirm-title .confirm-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--primary);
+}
+.confirm-modal.danger .confirm-title .confirm-dot { background: var(--danger); }
+.confirm-body {
+  font-size: 13px; color: var(--text);
+  line-height: 1.6;
+  margin: 0 0 18px;
+  word-break: break-word;
+}
+.confirm-foot {
+  display: flex; justify-content: flex-end; gap: 10px;
+}
+.confirm-modal .btn-danger {
+  background: var(--danger); color: white;
+}
+.confirm-modal .btn-danger:hover { background: #b85a51; }
+
 /* toast */
 .toast-container {
   position: fixed; top: 16px; right: 16px;

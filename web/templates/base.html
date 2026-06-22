@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{% block title %}mock-server{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23c8956d'/><stop offset='1' stop-color='%23d4a574'/></linearGradient></defs><rect width='64' height='64' rx='14' fill='url(%23g)'/><text x='50%25' y='54%25' text-anchor='middle' dominant-baseline='middle' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif' font-size='40' font-weight='700' fill='white'>M</text></svg>">
 <link rel="stylesheet" href="/static/app.css">
 <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
@@ -34,6 +35,7 @@
 
 <div id="toast-container" class="toast-container"></div>
 <div id="drawer-root"></div>
+<div id="confirm-root"></div>
 
 <script>
 // 全局 toast：监听 HX-Trigger 中的 toast 事件
@@ -57,6 +59,71 @@ document.body.addEventListener("click", e => {
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") document.getElementById("drawer-root").innerHTML = "";
 });
+
+// 自定义 confirm modal：拦截 hx-confirm
+(function() {
+  const root = document.getElementById("confirm-root");
+
+  function close() { root.innerHTML = ""; }
+
+  function open({title, message, kind, okText, cancelText, onOk}) {
+    const danger = kind === "danger";
+    const overlay = document.createElement("div");
+    overlay.className = "confirm-overlay";
+    overlay.innerHTML = `
+      <div class="confirm-modal ${danger ? 'danger' : ''}" role="dialog" aria-modal="true">
+        <h3 class="confirm-title"><span class="confirm-dot"></span><span class="confirm-title-text"></span></h3>
+        <p class="confirm-body"></p>
+        <div class="confirm-foot">
+          <button type="button" class="btn btn-ghost confirm-cancel"></button>
+          <button type="button" class="btn ${danger ? 'btn-danger' : 'btn-primary'} confirm-ok"></button>
+        </div>
+      </div>`;
+    overlay.querySelector(".confirm-title-text").textContent = title;
+    overlay.querySelector(".confirm-body").textContent = message;
+    overlay.querySelector(".confirm-cancel").textContent = cancelText || "取消";
+    overlay.querySelector(".confirm-ok").textContent = okText || "确认";
+
+    overlay.addEventListener("click", e => {
+      if (e.target === overlay) close();
+    });
+    overlay.querySelector(".confirm-cancel").addEventListener("click", close);
+    overlay.querySelector(".confirm-ok").addEventListener("click", () => {
+      close();
+      onOk && onOk();
+    });
+
+    root.appendChild(overlay);
+    setTimeout(() => overlay.querySelector(".confirm-ok").focus(), 0);
+
+    const escHandler = (e) => {
+      if (e.key === "Escape") { close(); document.removeEventListener("keydown", escHandler, true); }
+      if (e.key === "Enter")  {
+        const ok = overlay.querySelector(".confirm-ok");
+        if (ok) ok.click();
+        document.removeEventListener("keydown", escHandler, true);
+      }
+    };
+    document.addEventListener("keydown", escHandler, true);
+  }
+
+  document.body.addEventListener("htmx:confirm", function(e) {
+    if (!e.detail.question) return;  // 没设 hx-confirm 不拦
+    e.preventDefault();
+    const el = e.detail.elt;
+    const kind = (el && el.dataset.confirmKind) || "default";
+    const title = (el && el.dataset.confirmTitle) || (kind === "danger" ? "危险操作" : "确认");
+    const okText = (el && el.dataset.confirmOk) || (kind === "danger" ? "删除" : "确认");
+    const cancelText = (el && el.dataset.confirmCancel) || "取消";
+    open({
+      title, message: e.detail.question, kind, okText, cancelText,
+      onOk: () => e.detail.issueRequest(true),
+    });
+  });
+
+  // 暴露给非 HTMX 场景使用
+  window.appConfirm = open;
+})();
 
 // 复制流量原始 body
 async function copyFlowBody(flowId, kind, btn) {
