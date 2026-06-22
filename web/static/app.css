@@ -305,7 +305,13 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 .flow-save-btn:hover { color: var(--primary); border-color: var(--primary); background: var(--bg-2); }
 
 .flow-detail { gap: 0; }
-.detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.detail-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.detail-head .hit-tag {
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.4;
+}
 .detail-url {
   background: var(--bg-3); border-radius: 6px;
   padding: 8px 10px; margin-bottom: 16px;
@@ -431,7 +437,7 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 .toast-warning { border-color: var(--warning); color: #9a6a20; }
 
 /* 详情头右上角操作按钮 */
-.detail-head-actions { margin-left: auto; display: inline-flex; gap: 6px; }
+.detail-head-actions { margin-left: auto; display: inline-flex; gap: 6px; flex-shrink: 0; }
 .btn-mini {
   font-size: 11px; font-weight: 500;
   padding: 3px 10px;
@@ -440,6 +446,7 @@ nav { display: flex; flex-direction: column; gap: 4px; }
   background: var(--primary);
   color: #fff;
   cursor: pointer;
+  white-space: nowrap;
 }
 .btn-mini:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .btn-mini.btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }

@@ -14,14 +14,10 @@
         {% if flow.rule_name %}<span class="hit-tag">⊙ {{ flow.rule_name }}</span>{% endif %}
         <span class="detail-head-actions">
           <button type="button" class="btn btn-mini"
-                  title="一键保存为规则"
-                  hx-post="/flows/{{ flow.id }}/save-as-rule"
-                  hx-swap="none">＋ 保存为规则</button>
-          <button type="button" class="btn btn-mini btn-ghost"
                   title="预填表单后编辑保存"
                   hx-get="/flows/{{ flow.id }}/save-as-rule/edit"
                   hx-target="#drawer-root"
-                  hx-swap="innerHTML">✎ 编辑后保存…</button>
+                  hx-swap="innerHTML">✎ 保存到规则</button>
         </span>
       </div>
       <div class="detail-url mono">{{ flow.url }}</div>

@@ -10,10 +10,11 @@
   <span class="flow-tail">
     {% if flow.rule_name %}<span class="hit-tag" title="命中规则 #{{ flow.rule_id }}">⊙ {{ flow.rule_name }}</span>{% endif %}
     <button type="button" class="flow-save-btn"
-            title="一键保存为规则"
-            hx-post="/flows/{{ flow.id }}/save-as-rule"
-            hx-swap="none"
+            title="预填表单后编辑保存"
+            hx-get="/flows/{{ flow.id }}/save-as-rule/edit"
+            hx-target="#drawer-root"
+            hx-swap="innerHTML"
             hx-trigger="click consume"
-            onclick="event.stopPropagation()">＋规则</button>
+            onclick="event.stopPropagation()">保存到规则</button>
   </span>
 </div>
