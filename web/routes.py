@@ -265,7 +265,15 @@ def flows_clear():
 
 def _build_rule_from_flow(rec) -> dict:
     """从 FlowRecord 构造规则字段（用内存预览版 body，截断时由 UI 提示用户自己改）。"""
-    path = urlparse(rec.url).path or "/"
+    parsed = urlparse(rec.url)
+    path = parsed.path or "/"
+    # url_pattern 用完整 URL（scheme + host + path + query），片段(#fragment)丢弃
+    if parsed.scheme and parsed.netloc:
+        full_url = f"{parsed.scheme}://{parsed.netloc}{path}"
+        if parsed.query:
+            full_url += f"?{parsed.query}"
+    else:
+        full_url = rec.url.split("#", 1)[0] or path
     name = f"{rec.method} {path}"[:80]
     # headers 白名单：只保留 content-type，丢弃 length/encoding/cookie 等
     ct = ""
@@ -276,7 +284,7 @@ def _build_rule_from_flow(rec) -> dict:
     headers_obj = {"Content-Type": ct} if ct else {}
     return {
         "name": name,
-        "url_pattern": path,
+        "url_pattern": full_url,
         "method": rec.method,
         "status_code": rec.status or 200,
         "response_headers": json.dumps(headers_obj, ensure_ascii=False),
