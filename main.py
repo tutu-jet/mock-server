@@ -24,6 +24,7 @@ from mitmproxy.tools.dump import DumpMaster
 from app.db import init_db
 from app.matcher import matcher
 from app.proxy_addon import MockAddon
+from app import models
 from web.routes import router
 
 PROXY_HOST = "0.0.0.0"
@@ -45,6 +46,8 @@ logging.getLogger("mitmproxy.proxy.server").setLevel(logging.ERROR)
 async def lifespan(app: FastAPI):
     """startup: 起代理；shutdown: 收代理。"""
     init_db()
+    # 流量 body 是会话级数据，重启清空，避免与内存环形缓冲不一致
+    models.clear_flow_bodies()
     matcher.reload_from_db()
 
     addon = MockAddon()

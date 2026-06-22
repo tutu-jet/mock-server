@@ -73,16 +73,16 @@ class MockAddon:
                 req_raw = req.get_content(strict=False) or b""
             except Exception:
                 req_raw = req.raw_content or b""
-            req_body, req_trunc = flows._truncate_body(req_raw, req_ct)
+            req_body, req_trunc, req_size = flows._truncate_body(req_raw, req_ct)
             if resp:
                 resp_ct = resp.headers.get("content-type", "")
                 try:
                     resp_raw = resp.get_content(strict=False) or b""
                 except Exception:
                     resp_raw = resp.raw_content or b""
-                resp_body, resp_trunc = flows._truncate_body(resp_raw, resp_ct)
+                resp_body, resp_trunc, resp_size = flows._truncate_body(resp_raw, resp_ct)
             else:
-                resp_body, resp_trunc = "", False
+                resp_body, resp_trunc, resp_size = "", False, 0
 
             rec = flows.FlowRecord(
                 id=flows.buffer.next_id(),
@@ -99,7 +99,17 @@ class MockAddon:
                 resp_body=resp_body,
                 req_body_truncated=req_trunc,
                 resp_body_truncated=resp_trunc,
+                req_body_size=req_size,
+                resp_body_size=resp_size,
             )
+            # 把原始字节存数据库，供下载/复制完整 body 用
+            try:
+                if req_raw:
+                    models.insert_flow_body(rec.id, "req", req_raw, req_ct)
+                if resp and resp_raw:
+                    models.insert_flow_body(rec.id, "resp", resp_raw, resp_ct)
+            except Exception as e:
+                log.warning(f"保存 body 失败 flow_id={rec.id}: {e}")
             flows.buffer.add(rec)
         except Exception as e:
             log.warning(f"记录流量失败: {e}")

@@ -4,7 +4,7 @@ Rule 数据访问层。纯 CRUD，不做业务校验（页面层做）。
 from dataclasses import dataclass
 from typing import Optional
 
-from app.db import connect
+from app.db import connect, connect_flows
 
 ALLOWED_METHODS = ["*", "GET", "POST", "PUT", "DELETE", "PATCH"]
 
@@ -136,3 +136,42 @@ def increment_match_count(rule_id: int) -> None:
             "UPDATE rules SET match_count = match_count + 1 WHERE id = ?",
             (rule_id,),
         )
+
+
+# ---------- flow_bodies ----------
+
+def insert_flow_body(flow_id: int, kind: str, content: bytes, content_type: str) -> None:
+    """kind: 'req' | 'resp'。空 body 跳过写入。"""
+    if not content:
+        return
+    with connect_flows() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO flow_bodies (flow_id, kind, content, content_type, size) VALUES (?, ?, ?, ?, ?)",
+            (flow_id, kind, content, content_type, len(content)),
+        )
+
+
+def get_flow_body(flow_id: int, kind: str) -> Optional[tuple[bytes, str, int]]:
+    """返回 (content, content_type, size)，找不到返回 None。"""
+    with connect_flows() as conn:
+        row = conn.execute(
+            "SELECT content, content_type, size FROM flow_bodies WHERE flow_id = ? AND kind = ?",
+            (flow_id, kind),
+        ).fetchone()
+    if not row:
+        return None
+    return row["content"], row["content_type"], row["size"]
+
+
+def delete_flow_bodies(flow_id: int) -> None:
+    """删除某条流量对应的所有 body（req + resp）。"""
+    with connect_flows() as conn:
+        conn.execute("DELETE FROM flow_bodies WHERE flow_id = ?", (flow_id,))
+
+
+def clear_flow_bodies() -> None:
+    """清空全部 body，并 VACUUM 回收空间。"""
+    with connect_flows() as conn:
+        conn.execute("DELETE FROM flow_bodies")
+        # VACUUM 不能在事务里，autocommit 模式可直接调
+        conn.execute("VACUUM")

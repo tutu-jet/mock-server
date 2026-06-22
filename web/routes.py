@@ -37,6 +37,8 @@ env = Environment(
     autoescape=select_autoescape(["html"]),
 )
 env.filters["strftime"] = lambda ts, fmt="%H:%M:%S": time.strftime(fmt, time.localtime(float(ts)))
+env.filters["human_bytes"] = flows.human_bytes
+env.globals["MAX_BODY_BYTES"] = flows.MAX_BODY_BYTES
 
 
 def render(name: str, **ctx) -> HTMLResponse:
@@ -186,13 +188,74 @@ async def flows_stream(request: Request):
 def flow_detail(flow_id: int):
     rec = flows.buffer.get(flow_id)
     if not rec:
-        return HTMLResponse('<div class="empty">流量已过期</div>')
+        return render("_flow_expired.html")
     return render("_flow_detail.html", flow=rec)
+
+
+# content-type -> 下载文件扩展名
+_EXT_MAP = [
+    ("application/json", "json"),
+    ("application/xml", "xml"),
+    ("text/xml", "xml"),
+    ("text/html", "html"),
+    ("text/css", "css"),
+    ("text/javascript", "js"),
+    ("application/javascript", "js"),
+    ("text/csv", "csv"),
+    ("text/plain", "txt"),
+    ("application/x-www-form-urlencoded", "txt"),
+]
+
+
+def _guess_ext(content_type: str) -> str:
+    ct = (content_type or "").split(";")[0].strip().lower()
+    for prefix, ext in _EXT_MAP:
+        if ct == prefix:
+            return ext
+    if ct.endswith("+json"):
+        return "json"
+    if ct.endswith("+xml"):
+        return "xml"
+    if ct.startswith("text/"):
+        return "txt"
+    return "bin"
+
+
+@router.get("/flows/{flow_id}/body/{kind}")
+def flow_body(flow_id: int, kind: str, inline: int = 0):
+    """下载或获取流量原始 body。
+    kind: 'req' | 'resp'
+    inline=1: 返回 text/plain 给前端复制用（不触发下载对话框）
+    inline=0: 触发浏览器下载，filename=flow_<id>_<kind>.<ext>
+    """
+    if kind not in ("req", "resp"):
+        raise HTTPException(400, "kind 必须是 req 或 resp")
+    row = models.get_flow_body(flow_id, kind)
+    if not row:
+        raise HTTPException(404, "body 不存在或已被清空")
+    content, content_type, _size = row
+    if inline:
+        # 复制场景：统一 text/plain，浏览器 fetch 后 navigator.clipboard.writeText
+        return Response(content=content, media_type="text/plain; charset=utf-8")
+    ext = _guess_ext(content_type)
+    filename = f"flow_{flow_id}_{kind}.{ext}"
+    return Response(
+        content=content,
+        media_type=content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/flows", response_class=Response)
 def flows_clear():
     flows.buffer.clear()
+    # 同步清空数据库里的原始 body
+    try:
+        models.clear_flow_bodies()
+    except Exception as e:
+        # 清不掉只是占点磁盘，不影响功能
+        import logging
+        logging.getLogger("mock-server").warning(f"clear_flow_bodies 失败: {e}")
     return Response(status_code=200)
 
 

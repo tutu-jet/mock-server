@@ -17,19 +17,14 @@
   </button>
 </div>
 
-<div class="flows-layout">
-  <div id="flows-list"
-       class="flows-list"
-       hx-ext="sse"
-       sse-connect="/flows/stream"
-       sse-swap="flow"
-       hx-swap="afterbegin">
-    {% for flow in flows %}
-      {% include "_flow_row.html" %}
-    {% endfor %}
-  </div>
-  <div id="flow-detail" class="flow-detail">
-    <div class="empty">点击左侧任一条查看详情</div>
-  </div>
+<div id="flows-list"
+     class="flows-list"
+     hx-ext="sse"
+     sse-connect="/flows/stream"
+     sse-swap="flow"
+     hx-swap="afterbegin">
+  {% for flow in flows %}
+    {% include "_flow_row.html" %}
+  {% endfor %}
 </div>
 {% endblock %}

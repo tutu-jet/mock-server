@@ -1,11 +1,17 @@
 """
 SQLite 连接 + 建表。同步版（sqlite3 标准库），FastAPI 路由里用 run_in_threadpool 包一下即可。
 本地工具单用户，不存在并发争抢问题。
+
+两个独立库：
+- rules.db   规则配置（持久）
+- flows.db   流量原始 body（会话级，启动时清空）
 """
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "rules.db"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DB_PATH = DATA_DIR / "rules.db"
+FLOWS_DB_PATH = DATA_DIR / "flows.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS rules (
@@ -23,6 +29,18 @@ CREATE TABLE IF NOT EXISTS rules (
 );
 """
 
+FLOWS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS flow_bodies (
+    flow_id      INTEGER NOT NULL,
+    kind         TEXT    NOT NULL,                        -- 'req' | 'resp'
+    content      BLOB    NOT NULL,                        -- 原始字节
+    content_type TEXT    NOT NULL DEFAULT '',
+    size         INTEGER NOT NULL,
+    PRIMARY KEY (flow_id, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_flow_bodies_flow_id ON flow_bodies(flow_id);
+"""
+
 
 def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, isolation_level=None)  # autocommit
@@ -31,7 +49,17 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+def connect_flows() -> sqlite3.Connection:
+    conn = sqlite3.connect(FLOWS_DB_PATH, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    # WAL 提升大 body 写入性能
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
+
+
 def init_db() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         conn.executescript(SCHEMA)
+    with connect_flows() as conn:
+        conn.executescript(FLOWS_SCHEMA)

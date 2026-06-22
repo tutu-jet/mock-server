@@ -1,6 +1,6 @@
 <div class="flow-row {% if flow.rule_id %}hit{% endif %}"
      hx-get="/flows/{{ flow.id }}"
-     hx-target="#flow-detail"
+     hx-target="#drawer-root"
      hx-swap="innerHTML">
   <span class="flow-time">{{ flow.ts | strftime("%H:%M:%S") }}</span>
   <span class="method method-{{ flow.method|lower if flow.method != '*' else 'any' }}">{{ flow.method }}</span>

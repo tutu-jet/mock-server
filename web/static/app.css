@@ -260,16 +260,11 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 .chip:hover { border-color: var(--primary); color: var(--text); }
 
 /* flows */
-.flows-layout {
-  display: grid;
-  grid-template-columns: 1fr 480px;
-  gap: 16px;
-  height: calc(100vh - 220px);
-}
 .flows-list {
   background: var(--bg-2); border: 1px solid var(--border);
   border-radius: 12px; padding: 6px;
   overflow-y: auto;
+  height: calc(100vh - 220px);
 }
 .flow-row {
   display: grid;
@@ -294,11 +289,7 @@ nav { display: flex; flex-direction: column; gap: 4px; }
   border-radius: 4px; padding: 1px 6px; font-size: 11px;
 }
 
-.flow-detail {
-  background: var(--bg-2); border: 1px solid var(--border);
-  border-radius: 12px; padding: 16px;
-  overflow-y: auto;
-}
+.flow-detail { gap: 0; }
 .detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .detail-url {
   background: var(--bg-3); border-radius: 6px;
@@ -309,13 +300,56 @@ nav { display: flex; flex-direction: column; gap: 4px; }
   font-size: 12px; color: var(--muted);
   margin: 14px 0 6px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.5px;
+  display: flex; align-items: center; gap: 8px;
 }
+.body-size {
+  font-size: 10px; font-weight: 400;
+  color: var(--muted); opacity: 0.8;
+  text-transform: none; letter-spacing: 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.trunc-tag {
+  font-size: 10px; font-weight: 500;
+  color: #b8541a;
+  background: rgba(200, 90, 30, 0.14);
+  border: 1px solid rgba(200, 90, 30, 0.3);
+  border-radius: 4px;
+  padding: 1px 6px;
+  text-transform: none; letter-spacing: 0;
+}
+.body-actions { margin-left: auto; display: inline-flex; gap: 4px; }
+.body-btn {
+  font-size: 11px; font-weight: 500;
+  color: var(--text);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  text-decoration: none;
+  text-transform: none; letter-spacing: 0;
+  font-family: inherit;
+  line-height: 1.4;
+  transition: background 0.1s, border-color 0.1s;
+}
+.body-btn:hover { background: var(--bg-2); border-color: var(--primary); color: var(--primary); }
+.body-btn:disabled { opacity: 0.6; cursor: wait; }
 .flow-detail pre.small {
   background: var(--bg-3); border-radius: 6px;
   padding: 10px 12px; margin: 0;
   font-size: 11px; line-height: 1.5;
   max-height: 300px; overflow: auto;
   white-space: pre-wrap; word-break: break-all;
+}
+.flow-detail pre.small.truncated {
+  border-left: 2px solid #d97a3a;
+  max-height: 360px;
+}
+.trunc-foot {
+  display: inline-block;
+  color: #b8541a; font-weight: 500;
+  font-size: 11px;
+  user-select: none;
 }
 
 /* settings */

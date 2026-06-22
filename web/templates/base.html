@@ -57,6 +57,26 @@ document.body.addEventListener("click", e => {
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") document.getElementById("drawer-root").innerHTML = "";
 });
+
+// 复制流量原始 body
+async function copyFlowBody(flowId, kind, btn) {
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "...";
+  try {
+    const resp = await fetch(`/flows/${flowId}/body/${kind}?inline=1`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    await navigator.clipboard.writeText(text);
+    btn.textContent = "已复制";
+    document.body.dispatchEvent(new CustomEvent("toast", {detail: {kind: "info", msg: `已复制 ${text.length} 字符`}}));
+  } catch (e) {
+    btn.textContent = "失败";
+    document.body.dispatchEvent(new CustomEvent("toast", {detail: {kind: "error", msg: `复制失败: ${e.message}`}}));
+  } finally {
+    setTimeout(() => { btn.disabled = false; btn.textContent = origText; }, 1500);
+  }
+}
 </script>
 {% block scripts %}{% endblock %}
 </body>

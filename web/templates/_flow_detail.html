@@ -1,27 +1,57 @@
-<div class="detail-card">
-  <div class="detail-head">
-    <span class="method method-{{ flow.method|lower if flow.method != '*' else 'any' }}">{{ flow.method }}</span>
-    <span class="status status-{{ (flow.status // 100) if flow.status else 0 }}xx">{{ flow.status or '-' }}</span>
-    <span class="muted">{{ flow.duration_ms }}ms</span>
-    {% if flow.rule_name %}<span class="hit-tag">⊙ {{ flow.rule_name }}</span>{% endif %}
+<div class="drawer-overlay">
+  <div class="drawer" onclick="event.stopPropagation()">
+    <div class="drawer-head">
+      <h3>流量详情 #{{ flow.id }}</h3>
+      <button class="icon-btn" onclick="document.getElementById('drawer-root').innerHTML=''" title="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body flow-detail">
+      <div class="detail-head">
+        <span class="method method-{{ flow.method|lower if flow.method != '*' else 'any' }}">{{ flow.method }}</span>
+        <span class="status status-{{ (flow.status // 100) if flow.status else 0 }}xx">{{ flow.status or '-' }}</span>
+        <span class="muted">{{ flow.duration_ms }}ms</span>
+        {% if flow.rule_name %}<span class="hit-tag">⊙ {{ flow.rule_name }}</span>{% endif %}
+      </div>
+      <div class="detail-url mono">{{ flow.url }}</div>
+
+      <h4>Request Headers</h4>
+      <pre class="mono small">{% for k, v in flow.req_headers.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre>
+
+      {% if flow.req_body %}
+      <h4>Request Body
+        <span class="body-size">{{ flow.req_body_size | human_bytes }}</span>
+        {% if flow.req_body_truncated %}<span class="trunc-tag">截断 · 仅显示前 {{ MAX_BODY_BYTES | human_bytes }}</span>{% endif %}
+        <span class="body-actions">
+          <button type="button" class="body-btn" title="复制完整 body"
+                  onclick="copyFlowBody({{ flow.id }}, 'req', this)">复制</button>
+          <a class="body-btn" title="下载完整 body" href="/flows/{{ flow.id }}/body/req" download>下载</a>
+        </span>
+      </h4>
+      <pre class="mono small{% if flow.req_body_truncated %} truncated{% endif %}">{{ flow.req_body }}{% if flow.req_body_truncated %}
+
+<span class="trunc-foot">--- 已截断，原始 {{ flow.req_body_size | human_bytes }}，剩余 {{ (flow.req_body_size - MAX_BODY_BYTES) | human_bytes }} 未显示 ---</span>{% endif %}</pre>
+      {% endif %}
+
+      <h4>Response Headers</h4>
+      <pre class="mono small">{% for k, v in flow.resp_headers.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre>
+
+      {% if flow.resp_body %}
+      <h4>Response Body
+        <span class="body-size">{{ flow.resp_body_size | human_bytes }}</span>
+        {% if flow.resp_body_truncated %}<span class="trunc-tag">截断 · 仅显示前 {{ MAX_BODY_BYTES | human_bytes }}</span>{% endif %}
+        <span class="body-actions">
+          <button type="button" class="body-btn" title="复制完整 body"
+                  onclick="copyFlowBody({{ flow.id }}, 'resp', this)">复制</button>
+          <a class="body-btn" title="下载完整 body" href="/flows/{{ flow.id }}/body/resp" download>下载</a>
+        </span>
+      </h4>
+      <pre class="mono small{% if flow.resp_body_truncated %} truncated{% endif %}">{{ flow.resp_body }}{% if flow.resp_body_truncated %}
+
+<span class="trunc-foot">--- 已截断，原始 {{ flow.resp_body_size | human_bytes }}，剩余 {{ (flow.resp_body_size - MAX_BODY_BYTES) | human_bytes }} 未显示 ---</span>{% endif %}</pre>
+      {% endif %}
+    </div>
   </div>
-  <div class="detail-url mono">{{ flow.url }}</div>
-
-  <h4>Request Headers</h4>
-  <pre class="mono small">{% for k, v in flow.req_headers.items() %}{{ k }}: {{ v }}
-{% endfor %}</pre>
-
-  {% if flow.req_body %}
-  <h4>Request Body{% if flow.req_body_truncated %} <em class="hint">(截断)</em>{% endif %}</h4>
-  <pre class="mono small">{{ flow.req_body }}</pre>
-  {% endif %}
-
-  <h4>Response Headers</h4>
-  <pre class="mono small">{% for k, v in flow.resp_headers.items() %}{{ k }}: {{ v }}
-{% endfor %}</pre>
-
-  {% if flow.resp_body %}
-  <h4>Response Body{% if flow.resp_body_truncated %} <em class="hint">(截断)</em>{% endif %}</h4>
-  <pre class="mono small">{{ flow.resp_body }}</pre>
-  {% endif %}
 </div>
