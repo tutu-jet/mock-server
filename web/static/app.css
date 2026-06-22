@@ -93,7 +93,16 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--primary); }
 .input { width: 280px; }
 .textarea { width: 100%; resize: vertical; line-height: 1.5; }
-.select { cursor: pointer; }
+.select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'><path d='M3 5 L7 9 L11 5' stroke='%23888' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
 
 .btn {
   border: none; cursor: pointer;
