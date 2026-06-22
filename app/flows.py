@@ -12,7 +12,8 @@ import time
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from threading import Lock
-from typing import Optional
+from typing import Iterable, Optional
+from urllib.parse import urlparse
 
 # body 单条最多保留 64KB，避免大文件吃光内存
 MAX_BODY_BYTES = 64 * 1024
@@ -154,3 +155,58 @@ def human_bytes(n: int) -> str:
     if n < 1024 * 1024 * 1024:
         return f"{n / (1024 * 1024):.1f} MB"
     return f"{n / (1024 * 1024 * 1024):.2f} GB"
+
+
+# ---------- host 黑名单 ----------
+
+# 系统级网络连通性检测心跳，默认建议屏蔽（前端首次访问时预填到 localStorage）
+DEFAULT_BLOCKED_HOSTS = [
+    "connectivity.samsung.com.cn",
+    "connectivitycheck.gstatic.com",
+    "connect.rom.miui.com",
+    "wifi.vivo.com.cn",
+    "connectivitycheck.platform.hicloud.com",
+    "captive.apple.com",
+]
+
+
+def parse_blocked_hosts(raw: str) -> list[str]:
+    """把逗号/换行/空格分隔的字符串拆成 host 列表，小写、去空、去重。"""
+    if not raw:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for tok in re.split(r"[,\s]+", raw):
+        h = tok.strip().lower().lstrip(".")
+        if not h or h in seen:
+            continue
+        seen.add(h)
+        out.append(h)
+    return out
+
+
+def _host_of(url: str) -> str:
+    try:
+        return (urlparse(url).hostname or "").lower()
+    except Exception:
+        return ""
+
+
+def host_blocked(url: str, blocked: Iterable[str]) -> bool:
+    """url 的 host 是否命中黑名单。规则：完全相等 或 host 以 '.xxx' 结尾（子域匹配）。
+    支持简单通配符前缀 '*.example.com'（语义同后缀匹配）。"""
+    host = _host_of(url)
+    if not host:
+        return False
+    for pat in blocked:
+        if not pat:
+            continue
+        p = pat.lower().lstrip(".")
+        if p.startswith("*."):
+            p = p[2:]
+        if not p:
+            continue
+        if host == p or host.endswith("." + p):
+            return True
+    return False
+

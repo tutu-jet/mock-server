@@ -150,21 +150,53 @@ def rule_update(
 
 # ---------- 流量页 ----------
 
+BLOCKED_HOSTS_KEY = "flow_blocked_hosts"
+
+
+def _load_blocked_hosts() -> tuple[str, list[str]]:
+    """返回 (raw_text, parsed_list)。DB 中不存在则用默认值并写入一次。"""
+    raw = models.get_setting(BLOCKED_HOSTS_KEY, default="__unset__")
+    if raw == "__unset__":
+        raw = ",".join(flows.DEFAULT_BLOCKED_HOSTS)
+        models.set_setting(BLOCKED_HOSTS_KEY, raw)
+    return raw, flows.parse_blocked_hosts(raw)
+
+
 @router.get("/flows", response_class=HTMLResponse)
 def flows_page():
-    snap = list(reversed(flows.buffer.snapshot()))
+    raw, blocked_list = _load_blocked_hosts()
+    all_snap = list(reversed(flows.buffer.snapshot()))
+    if blocked_list:
+        snap = [f for f in all_snap if not flows.host_blocked(f.url, blocked_list)]
+    else:
+        snap = all_snap
+    filtered_out = len(all_snap) - len(snap)
     return render(
         "flows.html",
         active_tab="flows",
         flows=snap,
         total=len(snap),
         hit_count=sum(1 for f in snap if f.rule_id is not None),
+        filtered_out=filtered_out,
+        blocked_hosts_raw=raw,
+        default_blocked_hosts=",".join(flows.DEFAULT_BLOCKED_HOSTS),
     )
+
+
+@router.post("/flows/blocked-hosts", response_class=HTMLResponse)
+def flows_set_blocked_hosts(value: str = Form("")):
+    """保存 host 黑名单到 DB；返回 HX-Refresh 让页面整页刷新。"""
+    models.set_setting(BLOCKED_HOSTS_KEY, value.strip())
+    resp = HTMLResponse("", status_code=200)
+    resp.headers["HX-Refresh"] = "true"
+    return resp
 
 
 @router.get("/flows/stream")
 async def flows_stream(request: Request):
-    """SSE：每条新流量推一行 HTML 片段。"""
+    """SSE：每条新流量推一行 HTML 片段。建立连接时读一次黑名单缓存到闭包。
+    用户改了黑名单后前端会触发整页刷新，自动重连 SSE，新值生效。"""
+    _, blocked_list = _load_blocked_hosts()
     queue = flows.buffer.subscribe()
     tpl = env.get_template("_flow_row.html")
 
@@ -177,6 +209,8 @@ async def flows_stream(request: Request):
                     rec = await asyncio.wait_for(queue.get(), timeout=15.0)
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"
+                    continue
+                if blocked_list and flows.host_blocked(rec.url, blocked_list):
                     continue
                 html = tpl.render(flow=rec).replace("\n", " ")
                 yield f"event: flow\ndata: {html}\n\n"

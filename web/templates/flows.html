@@ -5,8 +5,27 @@
 
 {% block content %}
 <div class="toolbar">
-  <div class="muted">共 <span id="flows-total">{{ total }}</span> 条 · 命中 <span id="flows-hit">{{ hit_count }}</span></div>
+  <div class="muted">
+    共 <span id="flows-total">{{ total }}</span> 条 · 命中 <span id="flows-hit">{{ hit_count }}</span>
+    {% if filtered_out > 0 %}
+      · 已过滤 <span id="flows-filtered">{{ filtered_out }}</span>
+    {% endif %}
+  </div>
   <div class="toolbar-spacer"></div>
+  <form class="toolbar-form"
+        hx-post="/flows/blocked-hosts"
+        hx-swap="none">
+    <input name="value" class="input" style="width: 320px;"
+           value="{{ blocked_hosts_raw }}"
+           placeholder="host 黑名单（逗号分隔，支持 *.example.com）"
+           title="保存到服务端，所有客户端共享。回车应用。" />
+    <button class="btn btn-ghost" type="submit">应用</button>
+    <button class="btn btn-ghost" type="button"
+            hx-post="/flows/blocked-hosts"
+            hx-vals='{"value": {{ default_blocked_hosts|tojson }} }'
+            hx-swap="none"
+            title="恢复默认（系统心跳 host）">默认</button>
+  </form>
   <button class="btn btn-ghost"
           hx-delete="/flows"
           hx-confirm="清空所有流量？"

@@ -175,3 +175,20 @@ def clear_flow_bodies() -> None:
         conn.execute("DELETE FROM flow_bodies")
         # VACUUM 不能在事务里，autocommit 模式可直接调
         conn.execute("VACUUM")
+
+
+# ---------- settings (key/value，持久) ----------
+
+def get_setting(key: str, default: str = "") -> str:
+    with connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(key: str, value: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
