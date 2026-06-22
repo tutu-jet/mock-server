@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}帮助 · mock-server{% endblock %}
+{% block heading %}帮助{% endblock %}
+{% block subtitle %}把 Android 手机的流量接到这台电脑{% endblock %}
+
+{% block content %}
+<div class="help-grid">
+
+  <div class="settings-card">
+    <h3 class="help-h">当前信息</h3>
+    <div class="kv"><span>本机 IP</span><b class="mono">{{ lan_ip }}</b></div>
+    <div class="kv"><span>代理端口</span><b class="mono">{{ proxy_port }}</b></div>
+    <div class="kv"><span>UI 端口</span><b class="mono">{{ ui_port }}</b></div>
+    <div class="kv"><span>手机填写</span><span class="mono">{{ lan_ip }} : {{ proxy_port }}</span></div>
+    <p class="muted" style="margin:4px 0 0">本机 IP 来自默认网卡。如果电脑有多张网卡，请确认手机和电脑在同一 Wi-Fi。</p>
+  </div>
+
+  <div class="settings-card">
+    <h3 class="help-h">前置条件</h3>
+    <ul class="help-list">
+      <li>手机和电脑连同一个 Wi-Fi（手机热点也可，电脑连手机热点更稳）。</li>
+      <li>电脑防火墙允许 <b class="mono">{{ proxy_port }}</b> 端口入站（macOS 默认允许局域网；Windows 首次会弹确认框）。</li>
+      <li>已经 <code>python main.py</code> 启动，控制台没有报错。</li>
+    </ul>
+  </div>
+
+  <div class="settings-card">
+    <h3 class="help-h">步骤 1 · 设置手机 Wi-Fi 代理</h3>
+    <ol class="help-list">
+      <li>打开「设置 → Wi-Fi」，长按当前已连接的 Wi-Fi，点「修改网络」。</li>
+      <li>展开「高级选项」，「代理」改为 <b>手动</b>。</li>
+      <li>代理主机名填 <b class="mono">{{ lan_ip }}</b>，端口填 <b class="mono">{{ proxy_port }}</b>，保存。</li>
+    </ol>
+    <p class="muted" style="margin:4px 0 0">不同厂商位置略有差异：MIUI/HyperOS、ColorOS、OneUI 都在 Wi-Fi 详情里，搜「代理」即可。</p>
+  </div>
+
+  <div class="settings-card">
+    <h3 class="help-h">步骤 2 · 安装 mitmproxy 根证书（HTTPS 必装）</h3>
+    <ol class="help-list">
+      <li>手机浏览器打开 <a href="http://mitm.it" target="_blank" class="mono">http://mitm.it</a>，能看到下载页才说明代理通了。</li>
+      <li>点 <b>Android</b> 那一栏下载 <b class="mono">mitmproxy-ca-cert.cer</b>。</li>
+      <li>打开「设置 → 安全 → 加密与凭据 → 安装证书 → CA 证书」，选择刚下载的文件。</li>
+      <li>取个名字保存即可。</li>
+    </ol>
+    <p class="muted" style="margin:4px 0 0">如果 mitm.it 显示「If you can see this, traffic is not passing through mitmproxy」，说明代理没生效，回到步骤 1 检查 IP 和端口。</p>
+  </div>
+
+  <div class="settings-card">
+    <h3 class="help-h">步骤 3 · Android 7+ 抓 App HTTPS</h3>
+    <p>从 Android 7 起，App 默认<b>不信任用户安装的 CA 证书</b>，只有以下情况能抓到：</p>
+    <ul class="help-list">
+      <li><b>App 自己声明信任用户证书</b>（在 <code>network_security_config.xml</code> 加 <code>&lt;certificates src="user"/&gt;</code>）。自家 App 改一下重新打包即可。</li>
+      <li><b>系统证书</b>：root 过的机器（或模拟器）把证书放到 <code>/system/etc/security/cacerts/</code>。</li>
+      <li><b>用 frida / objection</b> 在运行时绕过 SSL Pinning。</li>
+    </ul>
+    <p class="muted" style="margin:4px 0 0">浏览器流量不受影响，装好用户证书就能抓。</p>
+  </div>
+
+  <div class="settings-card">
+    <h3 class="help-h">验证</h3>
+    <ol class="help-list">
+      <li>手机访问任意 HTTP 站点，比如 <a href="http://example.com" target="_blank" class="mono">http://example.com</a>。</li>
+      <li>回到本页左侧菜单的「<a href="/flows">流量</a>」页，应该立刻看到对应请求。</li>
+      <li>在「<a href="/rules">规则</a>」页新建一条规则，URL pattern 用 <code class="mono">https://example.com/*</code>，再访问就会被 mock。</li>
+    </ol>
+  </div>
+
+  <div class="settings-card">
+    <h3 class="help-h">常见问题</h3>
+    <dl class="help-faq">
+      <dt>手机打不开任何网页</dt>
+      <dd>代理 IP 或端口写错；或电脑没开 mock-server；或防火墙挡了 {{ proxy_port }} 端口。</dd>
+      <dt>mitm.it 打不开</dt>
+      <dd>代理没生效。确认手机 Wi-Fi 详情里代理确实是「手动」且 IP={{ lan_ip }} 端口={{ proxy_port }}。</dd>
+      <dt>HTTP 能抓，HTTPS 全是错</dt>
+      <dd>根证书没装或没被信任。重做步骤 2，注意要安装到「CA 证书」而不是「VPN 和应用证书」。</dd>
+      <dt>App 抓不到（浏览器能抓）</dt>
+      <dd>该 App 不信任用户证书，参考步骤 3。</dd>
+      <dt>电脑 IP 总是变</dt>
+      <dd>给电脑配静态 IP，或在路由器后台给 MAC 地址绑定固定 IP。</dd>
+    </dl>
+  </div>
+
+</div>
+{% endblock %}

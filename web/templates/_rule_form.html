@@ -2,7 +2,9 @@
   <div class="drawer" onclick="event.stopPropagation()">
     <div class="drawer-head">
       <h3>{% if rule %}编辑规则 #{{ rule.id }}{% else %}新建规则{% endif %}</h3>
-      <button class="icon-btn" onclick="document.getElementById('drawer-root').innerHTML=''">✕</button>
+      <button class="icon-btn" onclick="document.getElementById('drawer-root').innerHTML=''" title="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
     </div>
     <form class="drawer-body"
           hx-post="{% if rule %}/rules/{{ rule.id }}{% else %}/rules{% endif %}"

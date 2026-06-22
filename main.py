@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
+import signal
 
 import uvicorn
 from fastapi import FastAPI
@@ -34,6 +36,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
+# 被 Pin 的 App / 不信任用户证书的 App 会刷 "Client TLS handshake failed" WARNING，
+# 这是正常现象，不是 mock-server 故障。把 mitmproxy 自身的 server 日志压到 ERROR。
+logging.getLogger("mitmproxy.proxy.server").setLevel(logging.ERROR)
 
 
 @contextlib.asynccontextmanager
@@ -69,10 +74,24 @@ app.include_router(router)
 
 
 if __name__ == "__main__":
+    # 第二次 Ctrl+C 直接退出，不再等 uvicorn graceful shutdown
+    _interrupts = {"n": 0}
+
+    def _sigint(signum, frame):
+        _interrupts["n"] += 1
+        if _interrupts["n"] >= 2:
+            log.warning("再次收到 Ctrl+C，强制退出")
+            os._exit(130)
+        # 第一次保留默认行为（让 uvicorn 走 graceful）
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, _sigint)
+
     uvicorn.run(
         "main:app",
         host=UI_HOST,
         port=UI_PORT,
         reload=False,
         log_level="info",
+        timeout_graceful_shutdown=3,  # 最多等 3 秒就强制收摊
     )

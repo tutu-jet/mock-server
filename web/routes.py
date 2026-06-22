@@ -13,12 +13,13 @@
 - GET  /flows/stream          -> SSE
 - GET  /flows/{id}            -> 详情面板片段
 - DELETE /flows               -> 清空
-- GET  /settings              -> 整页
+- GET  /help                  -> 整页（帮助）
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import socket
 from pathlib import Path
 from typing import Optional
 
@@ -193,11 +194,29 @@ def flows_clear():
     return Response(status_code=200)
 
 
-# ---------- 设置页 ----------
+# ---------- 帮助页 ----------
 
-@router.get("/settings", response_class=HTMLResponse)
-def settings_page():
-    return render("settings.html", active_tab="settings", proxy_port=9077, ui_port=9088)
+def _detect_lan_ip() -> str:
+    """获取本机在局域网中的 IP（用 UDP 探测，不实际发包）。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+@router.get("/help", response_class=HTMLResponse)
+def help_page():
+    return render(
+        "help.html",
+        active_tab="help",
+        proxy_port=9077,
+        ui_port=9088,
+        lan_ip=_detect_lan_ip(),
+    )
 
 
 # ---------- 内部工具 ----------
