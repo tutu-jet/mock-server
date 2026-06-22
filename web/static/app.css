@@ -92,6 +92,7 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--primary); }
 .input { width: 280px; }
+.drawer .input { width: 100%; }
 .textarea { width: 100%; resize: vertical; line-height: 1.5; }
 .select {
   cursor: pointer;
@@ -229,7 +230,7 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 .drawer {
   background: var(--bg-2);
   border-left: 1px solid var(--border);
-  width: 560px; max-width: 90vw;
+  width: 720px; max-width: 90vw;
   height: 100vh; overflow-y: auto;
   padding: 20px 24px;
   animation: slideIn 0.2s;
