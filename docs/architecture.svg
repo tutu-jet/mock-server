@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7c93b3"/>
+    </marker>
+    <style>
+      .box { fill:#1b2230; stroke:#3a4661; stroke-width:1.5; rx:10; ry:10; }
+      .acc { fill:#22304a; stroke:#4d6794; stroke-width:1.5; rx:10; ry:10; }
+      .title { fill:#e6edf7; font-size:14px; font-weight:600; }
+      .sub { fill:#9bb0cf; font-size:11px; }
+      .lbl { fill:#7c93b3; font-size:11px; }
+      .link { stroke:#7c93b3; stroke-width:1.5; fill:none; }
+      .bg { fill:#0f141d; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="760" height="360"/>
+
+  <!-- Phone -->
+  <rect class="box" x="30" y="120" width="120" height="120"/>
+  <text class="title" x="90" y="155" text-anchor="middle">Android 真机</text>
+  <text class="sub"   x="90" y="175" text-anchor="middle">WiFi 代理 →</text>
+  <text class="sub"   x="90" y="192" text-anchor="middle">PC:9077</text>
+
+  <!-- Python process -->
+  <rect class="acc" x="210" y="40" width="340" height="280"/>
+  <text class="title" x="380" y="65" text-anchor="middle">单进程 Python (asyncio loop)</text>
+
+  <!-- mitmproxy -->
+  <rect class="box" x="235" y="95" width="135" height="95"/>
+  <text class="title" x="302" y="125" text-anchor="middle">mitmproxy</text>
+  <text class="sub"   x="302" y="145" text-anchor="middle">DumpMaster</text>
+  <text class="sub"   x="302" y="162" text-anchor="middle">+ MockAddon</text>
+  <text class="lbl"   x="302" y="180" text-anchor="middle">:9077</text>
+
+  <!-- FastAPI -->
+  <rect class="box" x="390" y="95" width="135" height="95"/>
+  <text class="title" x="457" y="125" text-anchor="middle">FastAPI</text>
+  <text class="sub"   x="457" y="145" text-anchor="middle">Jinja2 + HTMX</text>
+  <text class="sub"   x="457" y="162" text-anchor="middle">SSE 推送</text>
+  <text class="lbl"   x="457" y="180" text-anchor="middle">:9088</text>
+
+  <!-- shared layer -->
+  <rect class="box" x="235" y="215" width="290" height="85"/>
+  <text class="title" x="380" y="240" text-anchor="middle">app/  共享业务层</text>
+  <text class="sub"   x="380" y="260" text-anchor="middle">matcher · flows ring · models</text>
+  <text class="sub"   x="380" y="278" text-anchor="middle">rules.db (持久)  ·  flows.db (会话)</text>
+
+  <!-- Browser -->
+  <rect class="box" x="600" y="120" width="130" height="120"/>
+  <text class="title" x="665" y="155" text-anchor="middle">浏览器</text>
+  <text class="sub"   x="665" y="175" text-anchor="middle">http://localhost</text>
+  <text class="sub"   x="665" y="192" text-anchor="middle">:9088</text>
+
+  <!-- arrows -->
+  <path class="link" d="M150 180 L233 142" marker-end="url(#arr)"/>
+  <path class="link" d="M525 142 L598 180" marker-end="url(#arr)"/>
+  <path class="link" d="M302 190 L302 215" marker-end="url(#arr)"/>
+  <path class="link" d="M457 190 L457 215" marker-end="url(#arr)"/>
+
+  <text class="lbl" x="190" y="135">HTTP/HTTPS</text>
+  <text class="lbl" x="540" y="135">HTMX/SSE</text>
+</svg>

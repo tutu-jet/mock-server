@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 320" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7c93b3"/>
+    </marker>
+    <style>
+      .bg { fill:#0f141d; }
+      .node { fill:#1b2230; stroke:#3a4661; stroke-width:1.5; rx:8; ry:8; }
+      .hit  { fill:#1f3a2a; stroke:#3f8a5e; stroke-width:1.5; rx:8; ry:8; }
+      .miss { fill:#3a2424; stroke:#8a4747; stroke-width:1.5; rx:8; ry:8; }
+      .title { fill:#e6edf7; font-size:13px; font-weight:600; }
+      .sub { fill:#9bb0cf; font-size:11px; }
+      .lbl { fill:#7c93b3; font-size:11px; }
+      .link { stroke:#7c93b3; stroke-width:1.5; fill:none; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="760" height="320"/>
+  <text class="title" x="380" y="28" text-anchor="middle" font-size="15">请求处理流程</text>
+
+  <!-- request -->
+  <rect class="node" x="20" y="130" width="110" height="60"/>
+  <text class="title" x="75" y="155" text-anchor="middle">Request</text>
+  <text class="sub"   x="75" y="173" text-anchor="middle">GET /api/...</text>
+
+  <!-- match -->
+  <rect class="node" x="170" y="120" width="130" height="80"/>
+  <text class="title" x="235" y="148" text-anchor="middle">matcher</text>
+  <text class="sub"   x="235" y="167" text-anchor="middle">host + path</text>
+  <text class="sub"   x="235" y="183" text-anchor="middle">+ method 匹配</text>
+
+  <!-- hit -->
+  <rect class="hit" x="340" y="60" width="170" height="80"/>
+  <text class="title" x="425" y="88" text-anchor="middle">命中规则</text>
+  <text class="sub"   x="425" y="106" text-anchor="middle">返回自定义</text>
+  <text class="sub"   x="425" y="122" text-anchor="middle">status / headers / body</text>
+
+  <!-- miss -->
+  <rect class="miss" x="340" y="180" width="170" height="80"/>
+  <text class="title" x="425" y="208" text-anchor="middle">未命中</text>
+  <text class="sub"   x="425" y="226" text-anchor="middle">透传到真实服务器</text>
+  <text class="sub"   x="425" y="242" text-anchor="middle">原样返回</text>
+
+  <!-- flow -->
+  <rect class="node" x="560" y="120" width="170" height="80"/>
+  <text class="title" x="645" y="148" text-anchor="middle">flows ring + SSE</text>
+  <text class="sub"   x="645" y="167" text-anchor="middle">环形缓冲 1000 条</text>
+  <text class="sub"   x="645" y="183" text-anchor="middle">实时推送至 UI</text>
+
+  <!-- arrows -->
+  <path class="link" d="M130 160 L168 160" marker-end="url(#arr2)"/>
+  <path class="link" d="M300 145 L338 100" marker-end="url(#arr2)"/>
+  <path class="link" d="M300 175 L338 220" marker-end="url(#arr2)"/>
+  <path class="link" d="M510 100 Q560 100 600 122" marker-end="url(#arr2)"/>
+  <path class="link" d="M510 220 Q560 220 600 198" marker-end="url(#arr2)"/>
+
+  <text class="lbl" x="318" y="80">hit</text>
+  <text class="lbl" x="318" y="240">pass</text>
+</svg>
