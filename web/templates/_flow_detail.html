@@ -1,0 +1,27 @@
+<div class="detail-card">
+  <div class="detail-head">
+    <span class="method method-{{ flow.method|lower if flow.method != '*' else 'any' }}">{{ flow.method }}</span>
+    <span class="status status-{{ (flow.status // 100) if flow.status else 0 }}xx">{{ flow.status or '-' }}</span>
+    <span class="muted">{{ flow.duration_ms }}ms</span>
+    {% if flow.rule_name %}<span class="hit-tag">⊙ {{ flow.rule_name }}</span>{% endif %}
+  </div>
+  <div class="detail-url mono">{{ flow.url }}</div>
+
+  <h4>Request Headers</h4>
+  <pre class="mono small">{% for k, v in flow.req_headers.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre>
+
+  {% if flow.req_body %}
+  <h4>Request Body{% if flow.req_body_truncated %} <em class="hint">(截断)</em>{% endif %}</h4>
+  <pre class="mono small">{{ flow.req_body }}</pre>
+  {% endif %}
+
+  <h4>Response Headers</h4>
+  <pre class="mono small">{% for k, v in flow.resp_headers.items() %}{{ k }}: {{ v }}
+{% endfor %}</pre>
+
+  {% if flow.resp_body %}
+  <h4>Response Body{% if flow.resp_body_truncated %} <em class="hint">(截断)</em>{% endif %}</h4>
+  <pre class="mono small">{{ flow.resp_body }}</pre>
+  {% endif %}
+</div>

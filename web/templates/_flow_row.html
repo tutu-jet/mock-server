@@ -1,0 +1,11 @@
+<div class="flow-row {% if flow.rule_id %}hit{% endif %}"
+     hx-get="/flows/{{ flow.id }}"
+     hx-target="#flow-detail"
+     hx-swap="innerHTML">
+  <span class="flow-time">{{ flow.ts | int | string }}</span>
+  <span class="method method-{{ flow.method|lower if flow.method != '*' else 'any' }}">{{ flow.method }}</span>
+  <span class="status status-{{ (flow.status // 100) if flow.status else 0 }}xx">{{ flow.status or '-' }}</span>
+  <span class="flow-url" title="{{ flow.url }}">{{ flow.url }}</span>
+  <span class="muted">{{ flow.duration_ms }}ms</span>
+  {% if flow.rule_name %}<span class="hit-tag" title="命中规则 #{{ flow.rule_id }}">⊙ {{ flow.rule_name }}</span>{% endif %}
+</div>

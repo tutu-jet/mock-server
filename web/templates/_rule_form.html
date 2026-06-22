@@ -1,0 +1,59 @@
+<div class="drawer-overlay">
+  <div class="drawer" onclick="event.stopPropagation()">
+    <div class="drawer-head">
+      <h3>{% if rule %}编辑规则 #{{ rule.id }}{% else %}新建规则{% endif %}</h3>
+      <button class="icon-btn" onclick="document.getElementById('drawer-root').innerHTML=''">✕</button>
+    </div>
+    <form class="drawer-body"
+          hx-post="{% if rule %}/rules/{{ rule.id }}{% else %}/rules{% endif %}"
+          hx-target="#drawer-root"
+          hx-swap="innerHTML">
+      <label class="field">
+        <span>名称</span>
+        <input class="input" name="name" required value="{{ rule.name if rule else '' }}">
+      </label>
+      <label class="field">
+        <span>URL Pattern <em class="hint">支持 * 通配</em></span>
+        <input class="input mono" name="url_pattern" required
+               placeholder="例如 https://api.example.com/user/*"
+               value="{{ rule.url_pattern if rule else '' }}">
+      </label>
+      <div class="row">
+        <label class="field" style="flex:1">
+          <span>方法</span>
+          <select class="select" name="method">
+            {% for m in methods %}
+            <option value="{{ m }}" {% if rule and rule.method == m %}selected{% elif not rule and m == '*' %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field" style="flex:1">
+          <span>状态码</span>
+          <input class="input" name="status_code" type="number" value="{{ rule.status_code if rule else 200 }}">
+        </label>
+      </div>
+      <div class="chips">
+        {% for code in [200, 204, 400, 401, 404, 500] %}
+        <button class="chip" type="button" onclick="this.closest('form').querySelector('[name=status_code]').value={{ code }}">{{ code }}</button>
+        {% endfor %}
+      </div>
+      <label class="field">
+        <span>Response Headers (JSON)</span>
+        <textarea class="textarea mono" name="response_headers" rows="4">{{ rule.response_headers if rule else '{}' }}</textarea>
+      </label>
+      <label class="field">
+        <span>Response Body</span>
+        <textarea class="textarea mono" name="response_body" rows="10" placeholder="JSON 字符串或纯文本">{{ rule.response_body if rule else '' }}</textarea>
+      </label>
+      <label class="switch-inline">
+        <input type="checkbox" name="enabled" {% if not rule or rule.enabled %}checked{% endif %}>
+        <span>启用</span>
+      </label>
+      <div class="drawer-foot">
+        <button class="btn btn-ghost" type="button"
+                onclick="document.getElementById('drawer-root').innerHTML=''">取消</button>
+        <button class="btn btn-primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</div>

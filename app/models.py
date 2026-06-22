@@ -120,6 +120,15 @@ def toggle_rule(rule_id: int) -> bool:
     return bool(row["enabled"]) if row else False
 
 
+def set_rule_enabled(rule_id: int, enabled: bool) -> None:
+    """幂等 setter：直接把 enabled 设为目标值。"""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE rules SET enabled = ?, updated_at = datetime('now') WHERE id = ?",
+            (int(enabled), rule_id),
+        )
+
+
 def increment_match_count(rule_id: int) -> None:
     """命中规则后 +1，Task #3 会用到"""
     with connect() as conn:

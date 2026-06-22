@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}规则 · mock-server{% endblock %}
+{% block heading %}规则{% endblock %}
+{% block subtitle %}匹配命中的请求会被改写返回{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <form method="get" action="/rules" class="toolbar-form">
+    <input class="input" type="text" name="q" placeholder="搜索名称或 URL pattern..." value="{{ q }}">
+    <select class="select" name="method">
+      {% for m in methods %}
+      <option value="{{ m }}" {% if m == method_filter %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+    <label class="switch-inline">
+      <input type="checkbox" name="enabled_only" {% if enabled_only %}checked{% endif %}>
+      <span>仅显示启用</span>
+    </label>
+    <button class="btn btn-ghost" type="submit">筛选</button>
+  </form>
+  <div class="toolbar-spacer"></div>
+  <div class="muted">共 {{ total }} 条 · 启用 {{ enabled_count }}</div>
+  <button class="btn btn-primary"
+          hx-get="/rules/new"
+          hx-target="#drawer-root"
+          hx-swap="innerHTML">+ 新建规则</button>
+</div>
+
+{% if rules %}
+<div class="grid">
+  {% for rule in rules %}
+    {% include "_rule_card.html" %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-icon">∅</div>
+  <div>还没有规则</div>
+  <button class="btn btn-primary" style="margin-top:12px"
+          hx-get="/rules/new" hx-target="#drawer-root">+ 新建规则</button>
+</div>
+{% endif %}
+{% endblock %}

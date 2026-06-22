@@ -1,0 +1,32 @@
+<div class="rule-card {% if not rule.enabled %}disabled{% endif %}" id="rule-{{ rule.id }}">
+  <div class="rule-head">
+    <span class="method method-{{ rule.method|lower if rule.method != '*' else 'any' }}">{{ rule.method }}</span>
+    <span class="rule-name" title="{{ rule.name }}">{{ rule.name }}</span>
+    <label class="switch">
+      <input type="checkbox" {% if rule.enabled %}checked{% endif %}
+             hx-post="/rules/{{ rule.id }}/toggle"
+             hx-target="#rule-{{ rule.id }}"
+             hx-swap="outerHTML">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="rule-url">{{ rule.url_pattern }}</div>
+  <div class="rule-foot">
+    <span class="muted">状态</span>
+    <span class="status status-{{ rule.status_code // 100 }}xx">{{ rule.status_code }}</span>
+    <span class="muted">命中</span>
+    <span>{{ rule.match_count }}</span>
+    <span class="spacer"></span>
+    <button class="icon-btn"
+            hx-get="/rules/{{ rule.id }}/edit"
+            hx-target="#drawer-root"
+            hx-swap="innerHTML"
+            title="编辑">✎</button>
+    <button class="icon-btn icon-btn-danger"
+            hx-delete="/rules/{{ rule.id }}"
+            hx-target="#rule-{{ rule.id }}"
+            hx-swap="delete"
+            hx-confirm="确认删除「{{ rule.name }}」？此操作不可恢复。"
+            title="删除">🗑</button>
+  </div>
+</div>

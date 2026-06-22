@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}mock-server{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand">
+    <div class="logo">M</div>
+    <div>
+      <div class="brand-title">mock-server</div>
+      <div class="brand-sub">代理 9077 · UI 9088</div>
+    </div>
+  </div>
+  <nav>
+    <a href="/rules" class="nav-item {% if active_tab=='rules' %}active{% endif %}">规则</a>
+    <a href="/flows" class="nav-item {% if active_tab=='flows' %}active{% endif %}">流量</a>
+    <a href="/settings" class="nav-item {% if active_tab=='settings' %}active{% endif %}">设置</a>
+  </nav>
+</aside>
+
+<main class="main">
+  <header class="page-header">
+    <h1>{% block heading %}{% endblock %}</h1>
+    <p class="subtitle">{% block subtitle %}{% endblock %}</p>
+  </header>
+  {% block content %}{% endblock %}
+</main>
+
+<div id="toast-container" class="toast-container"></div>
+<div id="drawer-root"></div>
+
+<script>
+// 全局 toast：监听 HX-Trigger 中的 toast 事件
+document.body.addEventListener("toast", e => {
+  const {kind = "info", msg} = e.detail;
+  const el = document.createElement("div");
+  el.className = `toast toast-${kind}`;
+  el.textContent = msg;
+  document.getElementById("toast-container").appendChild(el);
+  setTimeout(() => el.classList.add("show"), 10);
+  setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 300); }, 3000);
+});
+
+// 抽屉关闭：点击遮罩
+document.body.addEventListener("click", e => {
+  if (e.target.classList.contains("drawer-overlay")) {
+    document.getElementById("drawer-root").innerHTML = "";
+  }
+});
+// ESC 关抽屉
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") document.getElementById("drawer-root").innerHTML = "";
+});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
