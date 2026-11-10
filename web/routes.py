@@ -330,17 +330,31 @@ async def flows_stream(request: Request):
     _, blocked_list = _load_blocked_hosts()
     queue = flows.buffer.subscribe()
     tpl = env.get_template("_flow_row.html")
+    shutting_down = request.app.state.shutting_down
 
     async def gen():
         try:
             while True:
-                if await request.is_disconnected():
+                if await request.is_disconnected() or shutting_down.is_set():
                     break
-                try:
-                    rec = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except asyncio.TimeoutError:
+                # 同时等「新流量」和「服务关停」，任一先到就醒。
+                # 否则 shutdown 时会一直卡在 queue.get()，被 graceful
+                # 超时强制 cancel，刷出一条 CancelledError traceback。
+                get_task = asyncio.ensure_future(queue.get())
+                stop_task = asyncio.ensure_future(shutting_down.wait())
+                done, pending = await asyncio.wait(
+                    {get_task, stop_task},
+                    timeout=15.0,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for t in pending:
+                    t.cancel()
+                if stop_task in done:
+                    break
+                if get_task not in done:  # 超时，发心跳保活
                     yield ": ping\n\n"
                     continue
+                rec = get_task.result()
                 if blocked_list and flows.host_blocked(rec.url, blocked_list):
                     continue
                 html = tpl.render(flow=rec).replace("\n", " ")
