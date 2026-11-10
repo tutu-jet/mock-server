@@ -4,6 +4,13 @@
 {% block subtitle %}匹配命中的请求会被改写返回{% endblock %}
 
 {% block content %}
+<div id="rules-content"
+     hx-target="this"
+     hx-select="#rules-content"
+     hx-swap="outerHTML show:none"
+     hx-disabled-elt="#rules-content button"
+     hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '更新失败，请重试'})"
+     hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
 
 <div class="master-bar {% if not master_enabled %}master-off{% endif %}">
   <div class="master-info">
@@ -17,7 +24,7 @@
       </div>
     </div>
   </div>
-  <form method="post" action="/rules/master">
+  <form method="post" action="/rules/master" hx-post="/rules/master">
     <button class="btn {% if master_enabled %}btn-ghost{% else %}btn-primary{% endif %}" type="submit">
       {% if master_enabled %}关闭整体 Mock{% else %}开启整体 Mock{% endif %}
     </button>
@@ -52,7 +59,8 @@
       </span>
       <span class="spacer"></span>
       {% if g.enabled_count %}
-      <form method="post" action="/rules/domain/{{ g.key }}/disable">
+      <form method="post" action="/rules/domain/{{ g.key }}/disable"
+            hx-post="/rules/domain/{{ g.key }}/disable">
         <button class="btn btn-ghost btn-sm" type="submit" title="关闭本域所有接口，恢复透传">一键全关</button>
       </form>
       {% endif %}
@@ -70,4 +78,5 @@
   <div>没有匹配的接口</div>
 </div>
 {% endif %}
+</div>
 {% endblock %}

@@ -15,27 +15,27 @@
   <div class="entity-url mono" title="{{ e.pattern }}">{{ e.pattern }}</div>
   <div class="seg">
     {# 关 / 透传 #}
-    <form method="post" action="/rules/entity/state" class="seg-form">
+    <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
       <input type="hidden" name="pattern" value="{{ e.pattern }}">
       <input type="hidden" name="state" value="off">
       <button type="submit" class="seg-btn {% if not e.active %}seg-on seg-on-off{% endif %}">透传</button>
     </form>
     {% if 'nodata' in e.states %}
-    <form method="post" action="/rules/entity/state" class="seg-form">
+    <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
       <input type="hidden" name="pattern" value="{{ e.pattern }}">
       <input type="hidden" name="state" value="nodata">
       <button type="submit" class="seg-btn {% if e.active == 'nodata' %}seg-on seg-on-nodata{% endif %}">无数据</button>
     </form>
     {% endif %}
     {% if 'noauth' in e.states %}
-    <form method="post" action="/rules/entity/state" class="seg-form">
+    <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
       <input type="hidden" name="pattern" value="{{ e.pattern }}">
       <input type="hidden" name="state" value="noauth">
       <button type="submit" class="seg-btn {% if e.active == 'noauth' %}seg-on seg-on-noauth{% endif %}">无权限</button>
     </form>
     {% endif %}
     {% if 'error' in e.states %}
-    <form method="post" action="/rules/entity/state" class="seg-form">
+    <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
       <input type="hidden" name="pattern" value="{{ e.pattern }}">
       <input type="hidden" name="state" value="error">
       <button type="submit" class="seg-btn {% if e.active == 'error' %}seg-on seg-on-error{% endif %}">服务错误</button>

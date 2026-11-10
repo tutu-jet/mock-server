@@ -197,8 +197,16 @@ def rule_toggle(rule_id: int):
     return render("_rule_card.html", rule=models.get_rule(rule_id))
 
 
+def _rules_redirect(request: Request) -> RedirectResponse:
+    """HTMX 局部更新保留当前筛选；普通表单仍回到规则页。"""
+    query = ""
+    if request.headers.get("HX-Request") == "true":
+        query = urlparse(request.headers.get("HX-Current-URL", "")).query
+    return RedirectResponse("/rules" + ("?" + query if query else ""), status_code=303)
+
+
 @router.post("/rules/entity/state")
-def rule_set_entity_state(pattern: str = Form(...), state: str = Form(...)):
+def rule_set_entity_state(request: Request, pattern: str = Form(...), state: str = Form(...)):
     """设置某 entity（由 url_pattern 唯一标识）的态：单选语义。
     state ∈ {noauth, error, nodata, off}。开目标态、关同 pattern 其它态。操作后回规则页。"""
     for r in models.list_rules():
@@ -208,7 +216,7 @@ def rule_set_entity_state(pattern: str = Form(...), state: str = Form(...)):
         if r.enabled != want:
             models.set_rule_enabled(r.id, want)
     matcher.reload_from_db()
-    return RedirectResponse("/rules", status_code=303)
+    return _rules_redirect(request)
 
 
 @router.delete("/rules/{rule_id}", response_class=Response)
@@ -219,22 +227,22 @@ def rule_delete(rule_id: int):
 
 
 @router.post("/rules/master")
-def rules_master_toggle():
+def rules_master_toggle(request: Request):
     """整体 mock 总开关：关闭时所有请求透传，忽略全部规则。切换后回规则页。"""
     current = models.get_setting(MASTER_SWITCH_KEY, "1") != "0"
     models.set_setting(MASTER_SWITCH_KEY, "0" if current else "1")
     matcher.reload_from_db()
-    return RedirectResponse("/rules", status_code=303)
+    return _rules_redirect(request)
 
 
 @router.post("/rules/domain/{domain}/disable")
-def rules_domain_disable(domain: str):
+def rules_domain_disable(domain: str, request: Request):
     """一键关闭某个域下的所有规则（恢复该域透传）。操作后回规则页。"""
     for r in models.list_rules():
         if _rule_domain(r) == domain and r.enabled:
             models.set_rule_enabled(r.id, False)
     matcher.reload_from_db()
-    return RedirectResponse("/rules", status_code=303)
+    return _rules_redirect(request)
 @router.get("/rules/new", response_class=HTMLResponse)
 def rule_new_form():
     return render("_rule_form.html", rule=None, methods=METHODS)
