@@ -4,18 +4,26 @@
   底部 segmented 四选一：关 / 无数据 / 无权限403 / 服务错误500（单选，当前态高亮）。
 #}
 <div class="entity-card {% if e.active %}is-active state-{{ e.active }}{% endif %}">
+  {% set selected = e.states.get(e.active) or e.states.get('nodata') or (e.states.values()|first) %}
   <div class="entity-head">
     <span class="method method-{{ e.method|lower if e.method != '*' else 'any' }}">{{ e.method }}</span>
     <span class="entity-name" title="{{ e.name }}">{{ e.name }}</span>
-    {% if e.active == 'noauth' %}<span class="state-badge sb-noauth">403</span>
-    {% elif e.active == 'error' %}<span class="state-badge sb-error">500</span>
-    {% elif e.active == 'nodata' %}<span class="state-badge sb-nodata">空</span>
+    {% if e.active %}<span class="state-badge sb-{{ e.active }}">{{ e.states[e.active].status_code }}</span>
     {% else %}<span class="state-badge sb-off">透传</span>{% endif %}
+    {% if e.request_match and e.selector_label %}
+    <button class="icon-btn rule-tip" type="button" aria-label="匹配说明" aria-expanded="false"
+            data-popover-label="匹配说明"
+            data-popover-value="{{ e.selector_label }}{% if e.shared %} · 概览与列表共享状态{% endif %}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7h.01"/></svg>
+    </button>
+    {% endif %}
+    <button class="icon-btn" type="button" title="编辑" aria-label="编辑"
+            hx-get="/rules/{{ selected.id }}/edit" hx-select="unset"
+            hx-target="#drawer-root" hx-swap="innerHTML">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    </button>
   </div>
   <div class="entity-url mono" title="{{ e.pattern }}">{{ e.pattern }}</div>
-  {% if e.request_match %}
-  <div class="muted">{{ e.selector_label }}{% if e.shared %} · 概览与列表共享状态{% endif %}</div>
-  {% endif %}
   <div class="seg">
     {# 关 / 透传 #}
     <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">

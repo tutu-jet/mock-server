@@ -166,7 +166,7 @@ class CasePagesTest(unittest.TestCase):
         self.client.post(f"/rules/{my.id}", data=payload)
         updated = models.get_rule(my.id)
         self.assertEqual(updated.request_match, "case-my")
-        self.assertTrue(updated.enabled)
+        self.assertFalse(updated.enabled)
         self.assertIsNone(routes.matcher.find_conflict(
             LEGACY_PATTERN, "GET", request_match="case-detail",
         ))

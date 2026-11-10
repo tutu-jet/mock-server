@@ -2,11 +2,29 @@
 Rule 数据访问层。纯 CRUD，不做业务校验（页面层做）。
 """
 from dataclasses import dataclass
+import json
 from typing import Optional
 
 from app.db import connect, connect_flows
 
 ALLOWED_METHODS = ["*", "GET", "POST", "PUT", "DELETE", "PATCH"]
+CONFIG_FIELDS = (
+    "name", "url_pattern", "method", "status_code",
+    "response_headers", "response_body", "request_match",
+)
+
+
+def capture_defaults(conn, rule_id=None) -> None:
+    query = "SELECT * FROM rules WHERE default_config=''"
+    rows = conn.execute(query + (" AND id=?" if rule_id is not None else ""),
+                        (rule_id,) if rule_id is not None else ()).fetchall()
+    for row in rows:
+        config = {key: row[key] for key in CONFIG_FIELDS}
+        state = {200: "nodata", 403: "noauth", 500: "error"}.get(row["status_code"], "other")
+        conn.execute(
+            "UPDATE rules SET default_config=?,state_key=? WHERE id=? AND default_config=''",
+            (json.dumps(config, ensure_ascii=False), state, row["id"]),
+        )
 
 
 @dataclass
@@ -23,6 +41,8 @@ class Rule:
     created_at: str
     updated_at: str
     request_match: str = ""
+    default_config: str = ""
+    state_key: str = ""
 
     @classmethod
     def from_row(cls, row) -> "Rule":
@@ -39,6 +59,8 @@ class Rule:
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             request_match=row["request_match"] if "request_match" in row.keys() else "",
+            default_config=row["default_config"] if "default_config" in row.keys() else "",
+            state_key=row["state_key"] if "state_key" in row.keys() else "",
         )
 
 
@@ -69,6 +91,7 @@ def create_rule(
     request_match: str = "",
 ) -> int:
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         cur = conn.execute(
             """
             INSERT INTO rules
@@ -77,6 +100,8 @@ def create_rule(
             """,
             (name, url_pattern, method, int(enabled), status_code, response_headers, response_body, request_match),
         )
+        capture_defaults(conn, cur.lastrowid)
+        conn.execute("COMMIT")
         return cur.lastrowid
 
 
@@ -93,6 +118,8 @@ def update_rule(
     request_match: str = "",
 ) -> None:
     with connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        capture_defaults(conn, rule_id)
         conn.execute(
             """
             UPDATE rules SET
@@ -104,6 +131,7 @@ def update_rule(
             (name, url_pattern, method, int(enabled), status_code,
              response_headers, response_body, request_match, rule_id),
         )
+        conn.execute("COMMIT")
 
 
 def delete_rule(rule_id: int) -> None:

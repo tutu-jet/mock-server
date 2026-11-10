@@ -9,7 +9,20 @@
     <form class="drawer-body"
           hx-post="{% if rule and rule.id %}/rules/{{ rule.id }}{% else %}/rules{% endif %}"
           hx-target="#drawer-root"
-          hx-swap="innerHTML">
+          hx-swap="innerHTML"
+          hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '规则保存失败，请检查输入后重试'})"
+          hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
+      {% if rule and rule.id and variants %}
+      <div class="chips" aria-label="选择编辑的规则状态">
+        {% for variant in variants %}
+        <button class="btn btn-sm {% if variant.id == rule.id %}btn-primary{% else %}btn-ghost{% endif %}"
+                type="button" aria-pressed="{{ 'true' if variant.id == rule.id else 'false' }}"
+                hx-get="/rules/{{ variant.id }}/edit" hx-target="#drawer-root" hx-swap="innerHTML">
+          {{ {'nodata': '无数据', 'noauth': '无权限', 'error': '服务错误'}.get(rule_state(variant), '自定义') }} · {{ variant.status_code }}
+        </button>
+        {% endfor %}
+      </div>
+      {% endif %}
       {% if from_flow and existing_rule %}
       <div class="banner banner-warn">
         <div>⚠️ 该请求已命中规则 #{{ existing_rule.id }}「{{ existing_rule.name }}」</div>
@@ -20,7 +33,7 @@
       <div class="banner banner-info">
         <div>ℹ️ 已有同 URL 规则 #{{ existing_disabled.id }}「{{ existing_disabled.name }}」（当前已禁用）</div>
         <div class="banner-url mono" title="{{ existing_disabled.url_pattern }}">{{ existing_disabled.method }} {{ existing_disabled.url_pattern }}</div>
-        <div>点「覆盖」会更新它并启用，或「另存为新规则」新建一条。</div>
+        <div>点「覆盖」只更新配置，保留禁用状态；或「另存为新规则」新建一条。</div>
       </div>
       {% elif from_flow and existing_wildcard %}
       <div class="banner banner-info">
@@ -55,7 +68,7 @@
                value="{{ rule.url_pattern if rule else '' }}">
       </label>
       <label class="field">
-        <span>请求分类 <em class="hint">CaseListItem 按解码后的 $filter 匹配</em></span>
+        <span>请求分类 <em class="hint">按解码后的查询条件或集合 / 详情路径匹配</em></span>
         <select class="select" name="request_match">
           {% for key, label in (REQUEST_MATCHES|default({'': '完整 URL 通配'})).items() %}
           <option value="{{ key }}" {% if rule and rule.request_match == key %}selected{% endif %}>{{ label }}</option>
@@ -89,11 +102,24 @@
         <span>Response Body</span>
         <textarea class="textarea mono" id="rule-form-body" name="response_body" rows="10" placeholder="JSON 字符串或纯文本">{{ rule.response_body if rule else '' }}</textarea>
       </label>
+      {% if rule and rule.id %}
+      <p class="muted">编辑仅修改配置，启用状态和命中次数保持不变。返回码修改不会改变原状态入口。</p>
+      {% else %}
       <label class="switch-inline">
         <input type="checkbox" name="enabled" {% if not rule or rule.enabled %}checked{% endif %}>
         <span>启用</span>
       </label>
+      {% endif %}
       <div class="drawer-foot">
+        {% if rule and rule.id %}
+        <button class="btn btn-ghost" type="button"
+                hx-get="/rules/{{ rule.id }}/detail" hx-target="#drawer-root" hx-swap="innerHTML">查看详情</button>
+        <button class="btn btn-ghost" type="button"
+                hx-post="/rules/{{ rule.id }}/restore" hx-target="#drawer-root" hx-swap="innerHTML"
+                hx-confirm="恢复此规则最初保存的默认配置？当前启用状态和命中次数保持不变。"
+                data-confirm-title="恢复默认配置" data-confirm-ok="恢复默认"
+                {% if not rule.default_config %}disabled{% endif %}>恢复默认</button>
+        {% endif %}
         <button class="btn btn-ghost" type="button"
                 onclick="document.getElementById('drawer-root').innerHTML=''">取消</button>
         {% if from_flow and existing_rule %}

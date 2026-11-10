@@ -1,7 +1,7 @@
-"""Request selectors for the CaseListItem variants observed in captured traffic."""
+"""Parsed request selectors for the page variants observed in captured traffic."""
 import fnmatch
 import re
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 
 REQUEST_MATCHES = {
@@ -9,6 +9,9 @@ REQUEST_MATCHES = {
     "case-my": "CaseListItem-My：auth = ME，无 pointer",
     "case-all": "CaseListItem-All：auth = ALL，无 pointer",
     "case-detail": "CaseListItem-Detail：有非空 pointer",
+    "system-list": "CACCloudAvaStatus-List：集合路径，无系统键",
+    "system-detail": "CACCloudAvaStatus-Detail：带系统键的详情路径",
+    "calendar-list": "Calendar 列表：EventType / CalendarSettings 精确集合路径",
 }
 
 _EQUALITY = re.compile(r"\s*([A-Za-z_]\w*)\s+eq\s+'((?:[^']|'')*)'\s*")
@@ -39,6 +42,17 @@ def request_matches(rule, url: str, method: str) -> bool:
     if not rule.request_match:
         return True
     parsed = urlsplit(url)
+    if rule.request_match == "calendar-list":
+        _, separator, entity = unquote(parsed.path).rpartition("/odata/mobile/")
+        return bool(separator) and entity in ("EventType", "CalendarSettings")
+    if rule.request_match in ("system-list", "system-detail"):
+        path = unquote(parsed.path)
+        _, separator, entity = path.rpartition("/odata/mobile/")
+        if not separator:
+            return False
+        if rule.request_match == "system-list":
+            return entity == "CACCloudAvaStatus"
+        return re.fullmatch(r"CACCloudAvaStatus\('(?:[^']|'')+'\)", entity) is not None
     if parsed.path != "/backend/odata/mobile/CaseListItem":
         return False
     filters = parse_qs(parsed.query, keep_blank_values=True).get("$filter", [])

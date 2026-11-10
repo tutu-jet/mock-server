@@ -167,15 +167,18 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
   }
 }
 
-// URL chip popover（baseurl / query）单例
+// URL chip 与规则说明共用单例浮层，事件委托兼容局部更新。
 (function() {
   let pop = null;
   let activeChip = null;
+  let pinned = false;
+  let closeTimer = null;
 
   function ensurePop() {
     if (pop) return pop;
     pop = document.createElement("div");
     pop.className = "url-popover";
+    pop.id = "url-rule-popover";
     pop.innerHTML = `
       <div class="url-popover-head">
         <span class="url-popover-label"></span>
@@ -185,6 +188,8 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
     `;
     document.body.appendChild(pop);
     pop.addEventListener("click", e => e.stopPropagation());
+    pop.addEventListener("mouseenter", () => clearTimeout(closeTimer));
+    pop.addEventListener("mouseleave", closeLater);
     pop.querySelector(".url-popover-copy").addEventListener("click", async (e) => {
       const btn = e.currentTarget;
       const val = pop.querySelector(".url-popover-value").textContent;
@@ -201,19 +206,47 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
   }
 
   function closePop() {
+    clearTimeout(closeTimer);
     if (!pop) return;
     pop.classList.remove("show");
-    if (activeChip) { activeChip.classList.remove("active"); activeChip = null; }
+    if (activeChip) {
+      activeChip.classList.remove("active");
+      if (activeChip.matches(".rule-tip")) {
+        activeChip.setAttribute("aria-expanded", "false");
+        activeChip.removeAttribute("aria-describedby");
+      }
+      activeChip = null;
+    }
+    pinned = false;
+  }
+
+  function closeLater() {
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => {
+      if (!pinned && document.activeElement !== activeChip) closePop();
+    }, 120);
   }
 
   function openPop(chip) {
+    clearTimeout(closeTimer);
+    if (activeChip && activeChip !== chip) closePop();
     const p = ensurePop();
+    const isTip = chip.matches(".rule-tip");
+    p.classList.toggle("rule-tooltip", isTip);
+    p.querySelector(".url-popover-copy").hidden = isTip;
+    if (isTip) {
+      p.setAttribute("role", "tooltip");
+      chip.setAttribute("aria-expanded", "true");
+      chip.setAttribute("aria-describedby", p.id);
+    } else {
+      p.removeAttribute("role");
+    }
     p.querySelector(".url-popover-label").textContent = chip.dataset.popoverLabel || "";
     p.querySelector(".url-popover-value").textContent = chip.dataset.popoverValue || "";
     p.classList.add("show");
     // 定位：chip 左下方，溢出右边时贴右边
     const r = chip.getBoundingClientRect();
-    p.style.top = (r.bottom + 4) + "px";
+    p.style.top = "0px";
     p.style.left = "0px";
     p.style.right = "auto";
     const pr = p.getBoundingClientRect();
@@ -223,28 +256,52 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
     }
     if (left < 12) left = 12;
     p.style.left = left + "px";
+    const top = r.bottom + 4 + pr.height > window.innerHeight - 12
+      ? Math.max(12, r.top - pr.height - 4) : r.bottom + 4;
+    p.style.top = top + "px";
     if (activeChip) activeChip.classList.remove("active");
     activeChip = chip;
     chip.classList.add("active");
   }
 
   document.addEventListener("click", e => {
-    const chip = e.target.closest(".flow-chip");
+    const chip = e.target.closest(".flow-chip, .rule-tip");
     if (chip) {
       e.preventDefault();
       e.stopPropagation();
-      if (activeChip === chip) { closePop(); }
-      else { openPop(chip); }
+      if (activeChip === chip && (!chip.matches(".rule-tip") || pinned)) { closePop(); }
+      else { openPop(chip); pinned = true; }
       return;
     }
     if (pop && pop.contains(e.target)) return;
     if (pop && pop.classList.contains("show")) closePop();
   }, true);
+  document.addEventListener("mouseover", e => {
+    const tip = e.target.closest(".rule-tip");
+    if (tip && !tip.contains(e.relatedTarget)) openPop(tip);
+  });
+  document.addEventListener("mouseout", e => {
+    const tip = e.target.closest(".rule-tip");
+    if (tip && !tip.contains(e.relatedTarget)) closeLater();
+  });
+  document.addEventListener("focusin", e => {
+    if (e.target.matches(".rule-tip")) openPop(e.target);
+  });
+  document.addEventListener("focusout", e => {
+    if (e.target.matches(".rule-tip") && !pinned) closePop();
+  });
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") closePop();
   });
-  window.addEventListener("scroll", closePop, true);
+  window.addEventListener("scroll", () => {
+    if (activeChip && activeChip.matches(".rule-tip") && document.activeElement === activeChip) {
+      openPop(activeChip);
+    } else {
+      closePop();
+    }
+  }, true);
   window.addEventListener("resize", closePop);
+  document.body.addEventListener("htmx:beforeSwap", closePop);
 })();
 </script>
 {% block scripts %}{% endblock %}

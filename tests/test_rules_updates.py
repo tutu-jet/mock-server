@@ -93,6 +93,22 @@ class RulesUpdatesTest(unittest.TestCase):
         self.assertNotIn('title="Cases"', filtered)
         self.assertIn('name="enabled_only" checked', filtered)
 
+    def test_domain_headings_use_existing_english_labels_only(self):
+        labels = {
+            "case": "Case", "servicerequest": "Service Request", "system": "System",
+            "calendar": "Calendar", "consumption": "Consumption",
+            "provisioning": "Provisioning", "other": "Other",
+        }
+        self.assertEqual(routes.DOMAIN_LABELS, labels)
+        for domain in labels:
+            models.create_rule(f"[{domain}] 示例", f"*/{domain}", "GET", 200, "{}", "", enabled=False)
+        before = models.list_rules()
+        html = routes.rules_page().body.decode()
+        for label in labels.values():
+            self.assertIn(f'<h3 class="domain-title">{label}</h3>', html)
+        self.assertIn(">筛选</button>", html)
+        self.assertEqual(models.list_rules(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

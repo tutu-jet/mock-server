@@ -326,6 +326,9 @@ nav { display: flex; flex-direction: column; gap: 4px; }
   display: none;
 }
 .url-popover.show { display: block; }
+.url-popover.rule-tooltip { min-width: 0; max-width: min(340px, calc(100vw - 24px)); }
+.rule-tooltip .url-popover-value { font-family: inherit; word-break: normal; overflow-wrap: anywhere; }
+.rule-tip.active { color: var(--primary); border-color: var(--primary); }
 .url-popover-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 8px; margin-bottom: 6px;

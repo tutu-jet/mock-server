@@ -1,0 +1,47 @@
+<div class="drawer-overlay"
+     hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '规则操作失败，请刷新后重试'})"
+     hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
+  <div class="drawer" onclick="event.stopPropagation()">
+    <div class="drawer-head">
+      <h3>规则详情 #{{ rule.id }}</h3>
+      <button class="icon-btn" type="button" aria-label="关闭详情"
+              onclick="document.getElementById('drawer-root').innerHTML=''">×</button>
+    </div>
+    <div class="drawer-body flow-detail">
+      <div class="detail-head">
+        <span class="method method-{{ rule.method|lower if rule.method != '*' else 'any' }}">{{ rule.method }}</span>
+        <span class="status status-{{ rule.status_code // 100 }}xx">{{ rule.status_code }}</span>
+        <span class="muted">{% if rule.enabled %}已启用{% else %}未启用{% endif %} · 命中 {{ rule.match_count }}</span>
+        <span class="detail-head-actions">
+          <button class="btn btn-mini" type="button"
+                  hx-get="/rules/{{ rule.id }}/edit" hx-target="#drawer-root" hx-swap="innerHTML">编辑</button>
+        </span>
+      </div>
+      <div class="detail-url mono">{{ rule.url_pattern }}</div>
+      <p class="muted">{{ rule.name }}{% if rule.request_match %}<br>{{ REQUEST_MATCHES.get(rule.request_match, rule.request_match) }}{% endif %}</p>
+      <div class="chips" aria-label="选择规则状态">
+        {% for variant in variants %}
+        <button class="btn btn-sm {% if variant.id == rule.id %}btn-primary{% else %}btn-ghost{% endif %}"
+                type="button" aria-pressed="{{ 'true' if variant.id == rule.id else 'false' }}"
+                hx-get="/rules/{{ variant.id }}/detail" hx-target="#drawer-root" hx-swap="innerHTML">
+          {{ {'nodata': '无数据', 'noauth': '无权限', 'error': '服务错误'}.get(rule_state(variant), '自定义') }} · {{ variant.status_code }}
+        </button>
+        {% endfor %}
+      </div>
+      <h4>Response Headers</h4>
+      <pre class="mono small">{{ rule.response_headers }}</pre>
+      <h4>Response Body</h4>
+      <pre class="mono small">{{ rule.response_body }}</pre>
+      <p class="muted">默认基准为首次建立快照时保存的配置；恢复只还原本条配置，不改变启用状态或命中次数。</p>
+      <div class="drawer-foot">
+        <button class="btn btn-ghost" type="button"
+                hx-post="/rules/{{ rule.id }}/restore" hx-target="#drawer-root" hx-swap="innerHTML"
+                hx-confirm="恢复此规则最初保存的默认配置？当前启用状态和命中次数保持不变。"
+                data-confirm-title="恢复默认配置" data-confirm-ok="恢复默认"
+                {% if not rule.default_config %}disabled{% endif %}>恢复默认</button>
+        <button class="btn btn-primary" type="button"
+                hx-get="/rules/{{ rule.id }}/edit" hx-target="#drawer-root" hx-swap="innerHTML">编辑</button>
+      </div>
+    </div>
+  </div>
+</div>
