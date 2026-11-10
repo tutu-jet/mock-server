@@ -1,0 +1,15 @@
+[project]
+name = "mock-server"
+version = "0.1.0"
+description = "mitmproxy + FastAPI 单进程抓包 / mock 代理"
+requires-python = ">=3.12"
+dependencies = [
+    "mitmproxy>=11.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.9",
+]
+
+[tool.uv]
+package = false

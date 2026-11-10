@@ -1,0 +1,45 @@
+{#
+  entity 卡片：一个 OData 接口（由 url_pattern 唯一标识）聚合它的三态规则。
+  e = {name, pattern, method, states:{noauth,error,nodata -> rule}, active}
+  底部 segmented 四选一：关 / 无数据 / 无权限403 / 服务错误500（单选，当前态高亮）。
+#}
+<div class="entity-card {% if e.active %}is-active state-{{ e.active }}{% endif %}">
+  <div class="entity-head">
+    <span class="method method-{{ e.method|lower if e.method != '*' else 'any' }}">{{ e.method }}</span>
+    <span class="entity-name" title="{{ e.name }}">{{ e.name }}</span>
+    {% if e.active == 'noauth' %}<span class="state-badge sb-noauth">403</span>
+    {% elif e.active == 'error' %}<span class="state-badge sb-error">500</span>
+    {% elif e.active == 'nodata' %}<span class="state-badge sb-nodata">空</span>
+    {% else %}<span class="state-badge sb-off">透传</span>{% endif %}
+  </div>
+  <div class="entity-url mono" title="{{ e.pattern }}">{{ e.pattern }}</div>
+  <div class="seg">
+    {# 关 / 透传 #}
+    <form method="post" action="/rules/entity/state" class="seg-form">
+      <input type="hidden" name="pattern" value="{{ e.pattern }}">
+      <input type="hidden" name="state" value="off">
+      <button type="submit" class="seg-btn {% if not e.active %}seg-on seg-on-off{% endif %}">透传</button>
+    </form>
+    {% if 'nodata' in e.states %}
+    <form method="post" action="/rules/entity/state" class="seg-form">
+      <input type="hidden" name="pattern" value="{{ e.pattern }}">
+      <input type="hidden" name="state" value="nodata">
+      <button type="submit" class="seg-btn {% if e.active == 'nodata' %}seg-on seg-on-nodata{% endif %}">无数据</button>
+    </form>
+    {% endif %}
+    {% if 'noauth' in e.states %}
+    <form method="post" action="/rules/entity/state" class="seg-form">
+      <input type="hidden" name="pattern" value="{{ e.pattern }}">
+      <input type="hidden" name="state" value="noauth">
+      <button type="submit" class="seg-btn {% if e.active == 'noauth' %}seg-on seg-on-noauth{% endif %}">无权限</button>
+    </form>
+    {% endif %}
+    {% if 'error' in e.states %}
+    <form method="post" action="/rules/entity/state" class="seg-form">
+      <input type="hidden" name="pattern" value="{{ e.pattern }}">
+      <input type="hidden" name="state" value="error">
+      <button type="submit" class="seg-btn {% if e.active == 'error' %}seg-on seg-on-error{% endif %}">服务错误</button>
+    </form>
+    {% endif %}
+  </div>
+</div>

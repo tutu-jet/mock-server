@@ -31,7 +31,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response, Streamin
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app import flows, models
-from app.matcher import matcher
+from app.matcher import matcher, MASTER_SWITCH_KEY
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 env = Environment(
@@ -41,6 +41,17 @@ env = Environment(
 env.filters["strftime"] = lambda ts, fmt="%H:%M:%S": time.strftime(fmt, time.localtime(float(ts)))
 env.filters["human_bytes"] = flows.human_bytes
 env.globals["MAX_BODY_BYTES"] = flows.MAX_BODY_BYTES
+
+
+def _static_version() -> str:
+    """用 app.css 的 mtime 做版本号，改样式后浏览器自动重新拉取，无需手动强刷。"""
+    try:
+        return str(int((Path(__file__).parent / "static" / "app.css").stat().st_mtime))
+    except OSError:
+        return "0"
+
+
+env.globals["STATIC_VERSION"] = _static_version()
 
 
 def render(name: str, **ctx) -> HTMLResponse:
@@ -61,15 +72,104 @@ def root():
 
 # ---------- 规则页 ----------
 
+# 规则名以 "[域] ..." 开头，这里把域提取出来用于分组。域顺序固定，未知归到"其他"。
+DOMAIN_ORDER = ["case", "servicerequest", "system", "calendar", "consumption", "provisioning"]
+DOMAIN_LABELS = {
+    "case": "案件 Case",
+    "servicerequest": "服务请求 Service Request",
+    "system": "云系统 System",
+    "calendar": "日历 Calendar",
+    "consumption": "消费 Consumption",
+    "provisioning": "预配置 Provisioning",
+    "other": "其他 Other",
+}
+
+
+def _rule_domain(rule) -> str:
+    """从规则名 '[域] ...' 提取域；取不到归 'other'。"""
+    name = rule.name or ""
+    if name.startswith("[") and "]" in name:
+        return name[1:name.index("]")].strip()
+    return "other"
+
+
+def _rule_state(rule) -> str:
+    """从 status_code + body 推断态：noauth / error / nodata / other。"""
+    if rule.status_code == 403:
+        return "noauth"
+    if rule.status_code == 500:
+        return "error"
+    if rule.status_code == 200:
+        return "nodata"
+    return "other"
+
+
+def _entity_name(rule) -> str:
+    """从规则名 '[域] EntitySet · 态' 提取 EntitySet。"""
+    name = rule.name or ""
+    if "]" in name:
+        rest = name[name.index("]") + 1:].strip()
+        if "·" in rest:
+            return rest.split("·")[0].strip()
+        return rest
+    return name
+
+
+def _group_rules_by_domain(rules):
+    """两层聚合：域 -> [entity 卡片]。每个 entity 卡片含 403/500/nodata 三态规则 id 与当前启用态。
+    返回 [{key,label,total,enabled_count, entities:[{name,pattern,method,states:{noauth,error,nodata},active}]}]。
+    """
+    # 先按域、再按 (entity url_pattern) 聚合
+    by_domain: dict[str, dict[str, dict]] = {}
+    for r in rules:
+        dom = _rule_domain(r)
+        ent_key = r.url_pattern  # url_pattern 唯一标识一个 entity
+        ent_map = by_domain.setdefault(dom, {})
+        card = ent_map.setdefault(ent_key, {
+            "name": _entity_name(r),
+            "pattern": r.url_pattern,
+            "method": r.method,
+            "states": {},       # state -> rule
+            "active": None,     # 当前启用的 state
+        })
+        card["states"][_rule_state(r)] = r
+        if r.enabled:
+            card["active"] = _rule_state(r)
+
+    ordered_keys = [d for d in DOMAIN_ORDER if d in by_domain]
+    ordered_keys += [d for d in by_domain if d not in DOMAIN_ORDER]
+    groups = []
+    for key in ordered_keys:
+        cards = list(by_domain[key].values())
+        cards.sort(key=lambda c: c["name"])
+        enabled = sum(1 for c in cards if c["active"])
+        groups.append({
+            "key": key,
+            "label": DOMAIN_LABELS.get(key, key),
+            "entities": cards,
+            "enabled_count": enabled,
+            "total": len(cards),
+        })
+    return groups
+
+
 @router.get("/rules", response_class=HTMLResponse)
 def rules_page(q: str = "", method: str = "ALL", enabled_only: bool = False):
     rules = models.list_rules()
-    filtered = _filter_rules(rules, q, method, enabled_only)
+    # q/method 过滤仍按单条规则；enabled_only 在聚合后按 entity 过滤
+    filtered = _filter_rules(rules, q, method, False)
+    filtered_sorted = sorted(filtered, key=lambda r: r.id)
+    groups = _group_rules_by_domain(filtered_sorted)
+    if enabled_only:
+        for g in groups:
+            g["entities"] = [e for e in g["entities"] if e["active"]]
+        groups = [g for g in groups if g["entities"]]
     return render(
         "rules.html",
         active_tab="rules",
-        rules=filtered,
-        total=len(rules),
+        groups=groups,
+        master_enabled=matcher.master_enabled,
+        total=len({r.url_pattern for r in rules}),
         enabled_count=sum(1 for r in rules if r.enabled),
         q=q,
         method_filter=method,
@@ -97,6 +197,20 @@ def rule_toggle(rule_id: int):
     return render("_rule_card.html", rule=models.get_rule(rule_id))
 
 
+@router.post("/rules/entity/state")
+def rule_set_entity_state(pattern: str = Form(...), state: str = Form(...)):
+    """设置某 entity（由 url_pattern 唯一标识）的态：单选语义。
+    state ∈ {noauth, error, nodata, off}。开目标态、关同 pattern 其它态。操作后回规则页。"""
+    for r in models.list_rules():
+        if r.url_pattern != pattern:
+            continue
+        want = (state != "off" and _rule_state(r) == state)
+        if r.enabled != want:
+            models.set_rule_enabled(r.id, want)
+    matcher.reload_from_db()
+    return RedirectResponse("/rules", status_code=303)
+
+
 @router.delete("/rules/{rule_id}", response_class=Response)
 def rule_delete(rule_id: int):
     models.delete_rule(rule_id)
@@ -104,6 +218,23 @@ def rule_delete(rule_id: int):
     return Response(status_code=200)
 
 
+@router.post("/rules/master")
+def rules_master_toggle():
+    """整体 mock 总开关：关闭时所有请求透传，忽略全部规则。切换后回规则页。"""
+    current = models.get_setting(MASTER_SWITCH_KEY, "1") != "0"
+    models.set_setting(MASTER_SWITCH_KEY, "0" if current else "1")
+    matcher.reload_from_db()
+    return RedirectResponse("/rules", status_code=303)
+
+
+@router.post("/rules/domain/{domain}/disable")
+def rules_domain_disable(domain: str):
+    """一键关闭某个域下的所有规则（恢复该域透传）。操作后回规则页。"""
+    for r in models.list_rules():
+        if _rule_domain(r) == domain and r.enabled:
+            models.set_rule_enabled(r.id, False)
+    matcher.reload_from_db()
+    return RedirectResponse("/rules", status_code=303)
 @router.get("/rules/new", response_class=HTMLResponse)
 def rule_new_form():
     return render("_rule_form.html", rule=None, methods=METHODS)
@@ -442,14 +573,42 @@ def _detect_lan_ip() -> str:
         s.close()
 
 
+def _detect_lan_ips() -> list[str]:
+    """列出本机所有候选局域网 IPv4，默认网卡的那个排在最前。
+
+    多网卡（公司网 + 热点 + 虚拟网卡）时，UDP 探测只能给一个，手机未必连得上。
+    这里枚举全部网卡地址，去掉回环，让用户按「哪个连得上用哪个」自己选。
+    """
+    primary = _detect_lan_ip()
+    ips: list[str] = []
+    try:
+        # getaddrinfo 枚举本机主机名解析到的所有地址
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip not in ips:
+                ips.append(ip)
+    except OSError:
+        pass
+    # 默认网卡探测结果置顶；回环仅在没有任何候选时保留
+    ordered = [primary] if primary != "127.0.0.1" else []
+    for ip in ips:
+        if ip != "127.0.0.1" and ip not in ordered:
+            ordered.append(ip)
+    if not ordered:
+        ordered = [primary]
+    return ordered
+
+
 @router.get("/help", response_class=HTMLResponse)
 def help_page():
+    lan_ips = _detect_lan_ips()
     return render(
         "help.html",
         active_tab="help",
         proxy_port=9077,
         ui_port=9088,
-        lan_ip=_detect_lan_ip(),
+        lan_ip=lan_ips[0],
+        lan_ips=lan_ips,
     )
 
 
