@@ -1,5 +1,5 @@
 {#
-  entity 卡片：一个 OData 接口（由 url_pattern 唯一标识）聚合它的三态规则。
+  entity 卡片：按 pattern + method + request_match 聚合三态规则。
   e = {name, pattern, method, states:{noauth,error,nodata -> rule}, active}
   底部 segmented 四选一：关 / 无数据 / 无权限403 / 服务错误500（单选，当前态高亮）。
 #}
@@ -13,16 +13,23 @@
     {% else %}<span class="state-badge sb-off">透传</span>{% endif %}
   </div>
   <div class="entity-url mono" title="{{ e.pattern }}">{{ e.pattern }}</div>
+  {% if e.request_match %}
+  <div class="muted">{{ e.selector_label }}{% if e.shared %} · 概览与列表共享状态{% endif %}</div>
+  {% endif %}
   <div class="seg">
     {# 关 / 透传 #}
     <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
       <input type="hidden" name="pattern" value="{{ e.pattern }}">
+      <input type="hidden" name="method" value="{{ e.method }}">
+      <input type="hidden" name="request_match" value="{{ e.request_match|default('') }}">
       <input type="hidden" name="state" value="off">
       <button type="submit" class="seg-btn {% if not e.active %}seg-on seg-on-off{% endif %}">透传</button>
     </form>
     {% if 'nodata' in e.states %}
     <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
       <input type="hidden" name="pattern" value="{{ e.pattern }}">
+      <input type="hidden" name="method" value="{{ e.method }}">
+      <input type="hidden" name="request_match" value="{{ e.request_match|default('') }}">
       <input type="hidden" name="state" value="nodata">
       <button type="submit" class="seg-btn {% if e.active == 'nodata' %}seg-on seg-on-nodata{% endif %}">无数据</button>
     </form>
@@ -30,6 +37,8 @@
     {% if 'noauth' in e.states %}
     <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
       <input type="hidden" name="pattern" value="{{ e.pattern }}">
+      <input type="hidden" name="method" value="{{ e.method }}">
+      <input type="hidden" name="request_match" value="{{ e.request_match|default('') }}">
       <input type="hidden" name="state" value="noauth">
       <button type="submit" class="seg-btn {% if e.active == 'noauth' %}seg-on seg-on-noauth{% endif %}">无权限</button>
     </form>
@@ -37,6 +46,8 @@
     {% if 'error' in e.states %}
     <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
       <input type="hidden" name="pattern" value="{{ e.pattern }}">
+      <input type="hidden" name="method" value="{{ e.method }}">
+      <input type="hidden" name="request_match" value="{{ e.request_match|default('') }}">
       <input type="hidden" name="state" value="error">
       <button type="submit" class="seg-btn {% if e.active == 'error' %}seg-on seg-on-error{% endif %}">服务错误</button>
     </form>

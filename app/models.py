@@ -22,6 +22,7 @@ class Rule:
     match_count: int
     created_at: str
     updated_at: str
+    request_match: str = ""
 
     @classmethod
     def from_row(cls, row) -> "Rule":
@@ -37,6 +38,7 @@ class Rule:
             match_count=row["match_count"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            request_match=row["request_match"] if "request_match" in row.keys() else "",
         )
 
 
@@ -64,15 +66,16 @@ def create_rule(
     response_headers: str,
     response_body: str,
     enabled: bool = True,
+    request_match: str = "",
 ) -> int:
     with connect() as conn:
         cur = conn.execute(
             """
             INSERT INTO rules
-                (name, url_pattern, method, enabled, status_code, response_headers, response_body)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (name, url_pattern, method, enabled, status_code, response_headers, response_body, request_match)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (name, url_pattern, method, int(enabled), status_code, response_headers, response_body),
+            (name, url_pattern, method, int(enabled), status_code, response_headers, response_body, request_match),
         )
         return cur.lastrowid
 
@@ -87,18 +90,19 @@ def update_rule(
     response_headers: str,
     response_body: str,
     enabled: bool,
+    request_match: str = "",
 ) -> None:
     with connect() as conn:
         conn.execute(
             """
             UPDATE rules SET
                 name = ?, url_pattern = ?, method = ?, enabled = ?,
-                status_code = ?, response_headers = ?, response_body = ?,
+                status_code = ?, response_headers = ?, response_body = ?, request_match = ?,
                 updated_at = datetime('now')
             WHERE id = ?
             """,
             (name, url_pattern, method, int(enabled), status_code,
-             response_headers, response_body, rule_id),
+             response_headers, response_body, request_match, rule_id),
         )
 
 

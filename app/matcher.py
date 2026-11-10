@@ -6,11 +6,11 @@ Web 层 CRUD 后必须调 reload_from_db() 让缓存生效。
 整体 mock 开关：master_enabled 为内存标志，从 settings 表读取（key=mock_master_enabled）。
 关闭时 match() 直接返回 None，所有请求全部透传到真实上游，忽略所有规则。
 """
-import fnmatch
 from threading import Lock
 from typing import Optional
 
 from app import models
+from app.rule_matching import request_matches
 
 # settings 表里整体开关的 key；缺省（未设置）视为开启
 MASTER_SWITCH_KEY = "mock_master_enabled"
@@ -51,9 +51,7 @@ class Matcher:
                 return None
             rules = list(self._rules)
         for rule in rules:
-            if rule.method != "*" and rule.method != method:
-                continue
-            if fnmatch.fnmatch(url, rule.url_pattern):
+            if request_matches(rule, url, method):
                 return rule
         return None
 
@@ -62,9 +60,10 @@ class Matcher:
         url_pattern: str,
         method: str,
         exclude_id: Optional[int] = None,
+        request_match: str = "",
     ) -> Optional[models.Rule]:
         """
-        冲突 = 已启用 + url_pattern 完全相同 + method 有交集（同名或一方是 *）
+        冲突 = 同 pattern、method 有交集，且请求分类相同或一方无分类。
         编辑时传 exclude_id 排除自己。
         """
         for rule in models.list_rules():
@@ -73,6 +72,8 @@ class Matcher:
             if exclude_id is not None and rule.id == exclude_id:
                 continue
             if rule.url_pattern != url_pattern:
+                continue
+            if rule.request_match and request_match and rule.request_match != request_match:
                 continue
             if rule.method == method or rule.method == "*" or method == "*":
                 return rule

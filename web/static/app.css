@@ -642,6 +642,8 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 }
 .domain-count.has-active { color: var(--primary); background: rgba(0, 112, 242, 0.1); }
 .domain-head .spacer { flex: 1; }
+.page-group + .page-group { margin-top: 24px; }
+.page-title { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--muted); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 
 /* ===== Entity 卡片（聚合三态，栅格化） ===== */

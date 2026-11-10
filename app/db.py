@@ -7,6 +7,7 @@ SQLite 连接 + 建表。同步版（sqlite3 标准库），FastAPI 路由里用
 - flows.db   流量原始 body（会话级，启动时清空）
 """
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -25,7 +26,8 @@ CREATE TABLE IF NOT EXISTS rules (
     response_body    TEXT    NOT NULL DEFAULT '',         -- 原始 body 文本
     match_count      INTEGER NOT NULL DEFAULT 0,
     created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+    updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    request_match    TEXT    NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -66,5 +68,25 @@ def init_db() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         conn.executescript(SCHEMA)
+        migrate_rules(conn)
     with connect_flows() as conn:
         conn.executescript(FLOWS_SCHEMA)
+
+
+def migrate_rules(conn: sqlite3.Connection) -> bool:
+    """Back up existing presets before adding selectors or splitting Case rules."""
+    from app.case_rules import LEGACY_PATTERN, MIGRATION_KEY, migrate_case_rules
+
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(rules)")}
+    done = conn.execute("SELECT 1 FROM settings WHERE key=?", (MIGRATION_KEY,)).fetchone()
+    legacy = conn.execute("SELECT 1 FROM rules WHERE url_pattern=?", (LEGACY_PATTERN,)).fetchone()
+    if legacy and not done:
+        backup_path = DB_PATH.with_name(DB_PATH.name + ".bak-case-pages-v1")
+        if not backup_path.exists():
+            with backup_path.open("xb"):
+                pass
+            with closing(sqlite3.connect(backup_path)) as backup:
+                conn.backup(backup)
+    if "request_match" not in columns:
+        conn.execute("ALTER TABLE rules ADD COLUMN request_match TEXT NOT NULL DEFAULT ''")
+    return migrate_case_rules(conn)

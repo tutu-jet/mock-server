@@ -11,6 +11,9 @@
     </label>
   </div>
   <div class="rule-url">{{ rule.url_pattern }}</div>
+  {% if rule.request_match %}
+  <div class="muted">{{ REQUEST_MATCHES[rule.request_match] }}</div>
+  {% endif %}
   <div class="rule-foot">
     <span class="muted">状态</span>
     <span class="status status-{{ rule.status_code // 100 }}xx">{{ rule.status_code }}</span>

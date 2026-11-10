@@ -54,6 +54,14 @@
                placeholder="例如 https://api.example.com/user/*"
                value="{{ rule.url_pattern if rule else '' }}">
       </label>
+      <label class="field">
+        <span>请求分类 <em class="hint">CaseListItem 按解码后的 $filter 匹配</em></span>
+        <select class="select" name="request_match">
+          {% for key, label in (REQUEST_MATCHES|default({'': '完整 URL 通配'})).items() %}
+          <option value="{{ key }}" {% if rule and rule.request_match == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <div class="row">
         <label class="field" style="flex:1">
           <span>方法</span>

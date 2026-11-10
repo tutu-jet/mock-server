@@ -65,11 +65,25 @@
       </form>
       {% endif %}
     </div>
-    <div class="entity-grid">
-      {% for e in g.entities %}
-        {% include "_entity_card.html" %}
+    {% if g.pages is defined %}
+      {% for page in g.pages %}
+      <section class="page-group" id="page-{{ g.key }}-{{ page.key }}"
+               aria-labelledby="page-title-{{ g.key }}-{{ page.key }}">
+        <h4 class="page-title" id="page-title-{{ g.key }}-{{ page.key }}">{{ page.label }}</h4>
+        <div class="entity-grid">
+          {% for e in page.entities %}
+            {% include "_entity_card.html" %}
+          {% endfor %}
+        </div>
+      </section>
       {% endfor %}
-    </div>
+    {% else %}
+      <div class="entity-grid">
+        {% for e in g.entities %}
+          {% include "_entity_card.html" %}
+        {% endfor %}
+      </div>
+    {% endif %}
   </section>
   {% endfor %}
 {% else %}

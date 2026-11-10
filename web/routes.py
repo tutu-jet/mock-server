@@ -23,7 +23,7 @@ import socket
 import time
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
+from typing import Annotated, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -32,6 +32,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app import flows, models
 from app.matcher import matcher, MASTER_SWITCH_KEY
+from app.rule_matching import REQUEST_MATCHES, rule_identity
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 env = Environment(
@@ -41,6 +42,7 @@ env = Environment(
 env.filters["strftime"] = lambda ts, fmt="%H:%M:%S": time.strftime(fmt, time.localtime(float(ts)))
 env.filters["human_bytes"] = flows.human_bytes
 env.globals["MAX_BODY_BYTES"] = flows.MAX_BODY_BYTES
+env.globals["REQUEST_MATCHES"] = REQUEST_MATCHES
 
 
 def _static_version() -> str:
@@ -115,20 +117,38 @@ def _entity_name(rule) -> str:
     return name
 
 
+def _card_pages(card) -> tuple[str, ...]:
+    if card["domain"] != "case":
+        return ("unclassified",)
+    if card["request_match"] in ("case-my", "case-all"):
+        return ("overview", "list")
+    if card["request_match"] == "case-detail":
+        return ("detail",)
+    entity = card["pattern"].removesuffix("*").rsplit("/", 1)[-1]
+    return {
+        "CaseSystem": ("list",),
+        "CaseCloseButtonStatus": ("detail",),
+        "IncidentHeader": ("detail",),
+        "IncidentMessageAuth": ("detail",),
+    }.get(entity, ("unclassified",))
+
+
 def _group_rules_by_domain(rules):
-    """两层聚合：域 -> [entity 卡片]。每个 entity 卡片含 403/500/nodata 三态规则 id 与当前启用态。
-    返回 [{key,label,total,enabled_count, entities:[{name,pattern,method,states:{noauth,error,nodata},active}]}]。
-    """
+    """域 -> 页面 -> 卡片；跨页卡片引用相同规则，域计数按匹配身份去重。"""
     # 先按域、再按 (entity url_pattern) 聚合
-    by_domain: dict[str, dict[str, dict]] = {}
+    by_domain: dict[str, dict[tuple[str, str, str], dict]] = {}
     for r in rules:
         dom = _rule_domain(r)
-        ent_key = r.url_pattern  # url_pattern 唯一标识一个 entity
+        ent_key = rule_identity(r)
         ent_map = by_domain.setdefault(dom, {})
         card = ent_map.setdefault(ent_key, {
             "name": _entity_name(r),
             "pattern": r.url_pattern,
             "method": r.method,
+            "request_match": r.request_match,
+            "selector_label": REQUEST_MATCHES.get(r.request_match, r.request_match),
+            "domain": dom,
+            "shared": r.request_match in ("case-my", "case-all"),
             "states": {},       # state -> rule
             "active": None,     # 当前启用的 state
         })
@@ -143,12 +163,21 @@ def _group_rules_by_domain(rules):
         cards = list(by_domain[key].values())
         cards.sort(key=lambda c: c["name"])
         enabled = sum(1 for c in cards if c["active"])
+        pages = []
+        for page, label in (
+            ("overview", "概览 Overview"), ("list", "列表 List"),
+            ("detail", "详情 Detail"), ("unclassified", "未分类"),
+        ):
+            members = [c for c in cards if page in _card_pages(c)]
+            if members:
+                pages.append({"key": page, "label": label, "entities": members})
         groups.append({
             "key": key,
             "label": DOMAIN_LABELS.get(key, key),
             "entities": cards,
             "enabled_count": enabled,
             "total": len(cards),
+            "pages": pages,
         })
     return groups
 
@@ -163,14 +192,17 @@ def rules_page(q: str = "", method: str = "ALL", enabled_only: bool = False):
     if enabled_only:
         for g in groups:
             g["entities"] = [e for e in g["entities"] if e["active"]]
+            for page in g["pages"]:
+                page["entities"] = [e for e in page["entities"] if e["active"]]
+            g["pages"] = [page for page in g["pages"] if page["entities"]]
         groups = [g for g in groups if g["entities"]]
     return render(
         "rules.html",
         active_tab="rules",
         groups=groups,
         master_enabled=matcher.master_enabled,
-        total=len({r.url_pattern for r in rules}),
-        enabled_count=sum(1 for r in rules if r.enabled),
+        total=len({rule_identity(r) for r in rules}),
+        enabled_count=len({rule_identity(r) for r in rules if r.enabled}),
         q=q,
         method_filter=method,
         enabled_only=enabled_only,
@@ -185,7 +217,9 @@ def rule_toggle(rule_id: int):
         raise HTTPException(404)
     target = not r.enabled
     if target:
-        conflict = matcher.find_conflict(r.url_pattern, r.method, exclude_id=rule_id)
+        conflict = matcher.find_conflict(
+            r.url_pattern, r.method, exclude_id=rule_id, request_match=r.request_match,
+        )
         if conflict:
             resp = render("_rule_card.html", rule=r)
             resp.headers["HX-Trigger"] = json.dumps({
@@ -206,12 +240,28 @@ def _rules_redirect(request: Request) -> RedirectResponse:
 
 
 @router.post("/rules/entity/state")
-def rule_set_entity_state(request: Request, pattern: str = Form(...), state: str = Form(...)):
-    """设置某 entity（由 url_pattern 唯一标识）的态：单选语义。
-    state ∈ {noauth, error, nodata, off}。开目标态、关同 pattern 其它态。操作后回规则页。"""
-    for r in models.list_rules():
-        if r.url_pattern != pattern:
-            continue
+def rule_set_entity_state(
+    request: Request, pattern: str = Form(...), state: str = Form(...),
+    method: Annotated[str, Form()] = "GET",
+    request_match: Annotated[str, Form()] = "",
+):
+    """切换同一 pattern + method + 请求分类下的状态，跨页面共享。"""
+    if state not in ("noauth", "error", "nodata", "off"):
+        raise HTTPException(422, "未知规则状态")
+    rules = models.list_rules()
+    members = [r for r in rules if rule_identity(r) == (pattern, method, request_match)]
+    if not members:
+        raise HTTPException(404, "规则不存在，请刷新页面")
+    if state != "off":
+        if sum(_rule_state(r) == state for r in members) != 1:
+            raise HTTPException(409, "该状态不存在或有重复规则，请先编辑规则")
+        for r in rules:
+            if not r.enabled or r in members or r.url_pattern != pattern:
+                continue
+            if r.method in ("*", method) or method == "*":
+                if not r.request_match or not request_match or r.request_match == request_match:
+                    raise HTTPException(409, "与已有启用规则冲突，请先关闭它")
+    for r in members:
         want = (state != "off" and _rule_state(r) == state)
         if r.enabled != want:
             models.set_rule_enabled(r.id, want)
@@ -265,9 +315,10 @@ def rule_create(
     response_headers: str = Form("{}"),
     response_body: str = Form(""),
     enabled: Optional[str] = Form(None),
+    request_match: str = Form(""),
 ):
     return _save_rule(None, name, url_pattern, method, status_code,
-                      response_headers, response_body, enabled == "on")
+                      response_headers, response_body, enabled == "on", request_match)
 
 
 @router.post("/rules/{rule_id}", response_class=HTMLResponse)
@@ -280,11 +331,15 @@ def rule_update(
     response_headers: str = Form("{}"),
     response_body: str = Form(""),
     enabled: Optional[str] = Form(None),
+    request_match: Optional[str] = Form(None),
 ):
-    if not models.get_rule(rule_id):
+    existing = models.get_rule(rule_id)
+    if not existing:
         raise HTTPException(404)
+    if request_match is None:
+        request_match = existing.request_match
     return _save_rule(rule_id, name, url_pattern, method, status_code,
-                      response_headers, response_body, enabled == "on")
+                      response_headers, response_body, enabled == "on", request_match)
 
 
 # ---------- 流量页 ----------
@@ -513,6 +568,7 @@ def flow_save_as_rule(flow_id: int):
         response_headers=fields["response_headers"],
         response_body=fields["response_body"],
         enabled=True,
+        request_match="",
     )
     matcher.reload_from_db()
 
@@ -641,7 +697,7 @@ def _find_same_pattern_disabled(url_pattern: str, method: str):
     for rule in models.list_rules():
         if rule.enabled:
             continue
-        if rule.url_pattern != url_pattern:
+        if rule.url_pattern != url_pattern or rule.request_match:
             continue
         if rule.method == method or rule.method == "*" or method == "*":
             return rule
@@ -661,11 +717,13 @@ def _filter_rules(rules, q: str, method: str, enabled_only: bool):
 
 
 def _save_rule(rule_id, name, url_pattern, method, status_code,
-               response_headers, response_body, enabled):
+               response_headers, response_body, enabled, request_match=""):
     name = name.strip()
     url_pattern = url_pattern.strip()
     if not name or not url_pattern:
         return _toast_resp("名称和 URL pattern 不能为空", "error")
+    if request_match not in REQUEST_MATCHES:
+        return _toast_resp("未知请求分类，请重新选择", "error")
     try:
         obj = json.loads((response_headers or "{}").strip() or "{}")
         if not isinstance(obj, dict):
@@ -673,7 +731,9 @@ def _save_rule(rule_id, name, url_pattern, method, status_code,
     except Exception:
         return _toast_resp("Headers 必须是合法 JSON 对象", "error")
     if enabled:
-        conflict = matcher.find_conflict(url_pattern, method, exclude_id=rule_id)
+        conflict = matcher.find_conflict(
+            url_pattern, method, exclude_id=rule_id, request_match=request_match,
+        )
         if conflict:
             return _toast_resp(
                 f"与规则 #{conflict.id}「{conflict.name}」冲突，请先关闭它", "error"
@@ -682,13 +742,13 @@ def _save_rule(rule_id, name, url_pattern, method, status_code,
         models.update_rule(
             rule_id, name=name, url_pattern=url_pattern, method=method,
             status_code=status_code, response_headers=response_headers,
-            response_body=response_body, enabled=enabled,
+            response_body=response_body, enabled=enabled, request_match=request_match,
         )
     else:
         models.create_rule(
             name=name, url_pattern=url_pattern, method=method,
             status_code=status_code, response_headers=response_headers,
-            response_body=response_body, enabled=enabled,
+            response_body=response_body, enabled=enabled, request_match=request_match,
         )
     matcher.reload_from_db()
     resp = HTMLResponse("")

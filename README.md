@@ -44,6 +44,18 @@ python main.py
 
 规则页切换接口状态、整体 Mock 或“一键全关”时局部更新，保留当前滚动位置和筛选条件，并同步更新启用数量。仅显示启用时，关闭的接口会从列表移除。
 
+每个域下按页面分组，未确认归属的接口保留在“未分类”。Case 的页面归属：
+
+| 页面 | 接口 |
+| ---- | ---- |
+| Overview | CaseListItem-My、CaseListItem-All |
+| List | 与 Overview 共用的 My / All、CaseSystem |
+| Detail | CaseListItem-Detail、CaseCloseButtonStatus、IncidentHeader、IncidentMessageAuth |
+
+跨页面的 My / All 使用同一组规则和状态，域计数与总计去重。CaseListItem 的“请求分类”解析 URL 解码后的 `$filter`：My 为 `auth eq 'ME'`，All 为 `auth eq 'ALL'`（两者都不含 pointer）；Detail 为非空的 `pointer eq '…'`。匹配不依赖 query 参数顺序、空格编码、具体案件 ID 或 `OPEN` 状态。仅接受由 `and` 连接的字符串等值条件；歧义表达式（如 `or`、重复字段或重复 `$filter`）不命中分类规则。普通规则仍按完整 URL 通配匹配，编辑时可选择请求分类。
+
+首次启动新版会先备份 `data/rules.db.bak-case-pages-v1`，再事务迁移旧版 CaseListItem 三态：原 ID 保留为 My，复制为 All 和 Detail，各自保留原响应与启用状态；新增三个缺失接口默认关闭，不修改其他规则。遇到自定义规则或多态同时启用等冲突会明确报错，不批量覆盖。IncidentMessageAuth 返回对象，其“无数据”为 `{}`，其他新增接口为空 `value` 集合。迁移只执行一次；备份保留原规则和计数。**已运行的进程需要手动重启**以加载新路由、匹配逻辑与迁移；重启会按既有行为清空会话抓包，需先保存需要的流量。
+
 ## 目录结构
 
 ```
