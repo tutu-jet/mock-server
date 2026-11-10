@@ -167,12 +167,10 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
   }
 }
 
-// URL chip 与规则说明共用单例浮层，事件委托兼容局部更新。
+// URL chip 与规则说明共用点击浮层，事件委托兼容局部更新。
 (function() {
   let pop = null;
   let activeChip = null;
-  let pinned = false;
-  let closeTimer = null;
 
   function ensurePop() {
     if (pop) return pop;
@@ -188,8 +186,6 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
     `;
     document.body.appendChild(pop);
     pop.addEventListener("click", e => e.stopPropagation());
-    pop.addEventListener("mouseenter", () => clearTimeout(closeTimer));
-    pop.addEventListener("mouseleave", closeLater);
     pop.querySelector(".url-popover-copy").addEventListener("click", async (e) => {
       const btn = e.currentTarget;
       const val = pop.querySelector(".url-popover-value").textContent;
@@ -206,7 +202,6 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
   }
 
   function closePop() {
-    clearTimeout(closeTimer);
     if (!pop) return;
     pop.classList.remove("show");
     if (activeChip) {
@@ -217,18 +212,9 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
       }
       activeChip = null;
     }
-    pinned = false;
-  }
-
-  function closeLater() {
-    clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => {
-      if (!pinned && document.activeElement !== activeChip) closePop();
-    }, 120);
   }
 
   function openPop(chip) {
-    clearTimeout(closeTimer);
     if (activeChip && activeChip !== chip) closePop();
     const p = ensurePop();
     const isTip = chip.matches(".rule-tip");
@@ -269,27 +255,13 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
     if (chip) {
       e.preventDefault();
       e.stopPropagation();
-      if (activeChip === chip && (!chip.matches(".rule-tip") || pinned)) { closePop(); }
-      else { openPop(chip); pinned = true; }
+      if (activeChip === chip) { closePop(); }
+      else { openPop(chip); }
       return;
     }
     if (pop && pop.contains(e.target)) return;
     if (pop && pop.classList.contains("show")) closePop();
   }, true);
-  document.addEventListener("mouseover", e => {
-    const tip = e.target.closest(".rule-tip");
-    if (tip && !tip.contains(e.relatedTarget)) openPop(tip);
-  });
-  document.addEventListener("mouseout", e => {
-    const tip = e.target.closest(".rule-tip");
-    if (tip && !tip.contains(e.relatedTarget)) closeLater();
-  });
-  document.addEventListener("focusin", e => {
-    if (e.target.matches(".rule-tip")) openPop(e.target);
-  });
-  document.addEventListener("focusout", e => {
-    if (e.target.matches(".rule-tip") && !pinned) closePop();
-  });
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") closePop();
   });
