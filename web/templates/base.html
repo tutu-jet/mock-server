@@ -49,8 +49,9 @@ document.body.addEventListener("toast", e => {
   setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 300); }, 3000);
 });
 
-// 抽屉关闭：点击遮罩
-document.body.addEventListener("click", e => {
+// 抽屉关闭：在遮罩空白处按下（且不是拖拽把手）就收起。
+// 用 pointerdown 起点判断，避免「从抽屉内选中文字拖到遮罩松手」被误判为点击而关闭。
+document.body.addEventListener("pointerdown", e => {
   if (e.target.classList.contains("drawer-overlay")) {
     document.getElementById("drawer-root").innerHTML = "";
   }
@@ -59,6 +60,59 @@ document.body.addEventListener("click", e => {
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") document.getElementById("drawer-root").innerHTML = "";
 });
+
+// 抽屉宽度：可左右拖拽调整，持久化到 localStorage，下次打开沿用
+(function() {
+  const KEY = "mock-server.drawer-width";
+  const MIN = 360;
+  const root = document.documentElement;
+
+  function maxWidth() { return Math.round(window.innerWidth * 0.95); }
+  function clamp(w) { return Math.max(MIN, Math.min(maxWidth(), w)); }
+
+  // 页面加载即套用上次宽度（新注入的抽屉通过 --drawer-width 变量自动生效）
+  const saved = parseInt(localStorage.getItem(KEY), 10);
+  if (saved) root.style.setProperty("--drawer-width", clamp(saved) + "px");
+
+  function attachResizer(drawer) {
+    if (drawer.querySelector(":scope > .drawer-resizer")) return;  // 已挂过
+    const handle = document.createElement("div");
+    handle.className = "drawer-resizer";
+    handle.title = "拖动调整宽度";
+    drawer.prepend(handle);
+
+    handle.addEventListener("pointerdown", e => {
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add("active");
+      document.body.classList.add("drawer-resizing");
+
+      const move = ev => {
+        // 抽屉贴右边：宽度 = 视口右缘到指针的距离
+        const w = clamp(window.innerWidth - ev.clientX);
+        root.style.setProperty("--drawer-width", w + "px");
+      };
+      const up = () => {
+        handle.classList.remove("active");
+        document.body.classList.remove("drawer-resizing");
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        const cur = getComputedStyle(root).getPropertyValue("--drawer-width").trim();
+        const n = parseInt(cur, 10);
+        if (n) localStorage.setItem(KEY, String(n));
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+    });
+  }
+
+  // 抽屉由 htmx 动态注入 drawer-root，监听其变化给每个 .drawer 挂把手
+  const target = document.getElementById("drawer-root");
+  new MutationObserver(() => {
+    const d = target.querySelector(".drawer");
+    if (d) attachResizer(d);
+  }).observe(target, { childList: true, subtree: true });
+})();
 
 // 自定义 confirm modal：拦截 hx-confirm
 (function() {
