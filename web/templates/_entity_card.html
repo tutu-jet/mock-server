@@ -3,7 +3,10 @@
   e = {name, pattern, method, states:{noauth,error,nodata -> rule}, active}
   底部 segmented 四选一：关 / 无数据 / 无权限403 / 服务错误500（单选，当前态高亮）。
 #}
-<div class="entity-card {% if e.active %}is-active state-{{ e.active }}{% endif %}">
+{% set entity_id = e.states.values() | map(attribute='id') | min %}
+{% set card_id = 'entity-' ~ entity_id ~ '-' ~ (page.key if page is defined else 'default') %}
+<div id="{{ card_id }}" data-entity-id="{{ entity_id }}"
+     class="entity-card {% if e.active %}is-active state-{{ e.active }}{% endif %}">
   {% set selected = e.states.get(e.active) or e.states.get('nodata') or (e.states.values()|first) %}
   <div class="entity-head">
     <span class="method method-{{ e.method|lower if e.method != '*' else 'any' }}">{{ e.method }}</span>
@@ -17,21 +20,27 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7h.01"/></svg>
     </button>
     {% endif %}
-    <button class="icon-btn" type="button" title="编辑" aria-label="编辑"
+    <button class="icon-btn entity-edit" type="button" title="Edit rule" aria-label="编辑 {{ e.name }}"
             hx-get="/rules/{{ selected.id }}/edit" hx-select="unset"
             hx-target="#drawer-root" hx-swap="innerHTML">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
     </button>
   </div>
   <div class="entity-url mono" title="{{ e.pattern }}">{{ e.pattern }}</div>
-  <div class="seg">
+  <div class="seg" role="group" aria-label="{{ e.name }} 的响应状态"
+       {% if entity_state_partial|default(false) %}
+       hx-target="closest .entity-card" hx-select="#{{ card_id }}" hx-select-oob="unset"
+       hx-swap="outerHTML swap:0ms settle:0ms show:none"
+       hx-disabled-elt=".entity-card[data-entity-id='{{ entity_id }}'] .seg button"
+       {% endif %}>
     {# 关 / 透传 #}
     <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
       <input type="hidden" name="pattern" value="{{ e.pattern }}">
       <input type="hidden" name="method" value="{{ e.method }}">
       <input type="hidden" name="request_match" value="{{ e.request_match|default('') }}">
       <input type="hidden" name="state" value="off">
-      <button type="submit" class="seg-btn {% if not e.active %}seg-on seg-on-off{% endif %}">透传</button>
+      <button id="{{ card_id }}-off" type="submit" aria-pressed="{{ 'true' if not e.active else 'false' }}"
+              class="seg-btn {% if not e.active %}seg-on seg-on-off{% endif %}">透传</button>
     </form>
     {% if 'nodata' in e.states %}
     <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
@@ -39,7 +48,8 @@
       <input type="hidden" name="method" value="{{ e.method }}">
       <input type="hidden" name="request_match" value="{{ e.request_match|default('') }}">
       <input type="hidden" name="state" value="nodata">
-      <button type="submit" class="seg-btn {% if e.active == 'nodata' %}seg-on seg-on-nodata{% endif %}">无数据</button>
+      <button id="{{ card_id }}-nodata" type="submit" aria-pressed="{{ 'true' if e.active == 'nodata' else 'false' }}"
+              class="seg-btn {% if e.active == 'nodata' %}seg-on seg-on-nodata{% endif %}">无数据</button>
     </form>
     {% endif %}
     {% if 'noauth' in e.states %}
@@ -48,7 +58,8 @@
       <input type="hidden" name="method" value="{{ e.method }}">
       <input type="hidden" name="request_match" value="{{ e.request_match|default('') }}">
       <input type="hidden" name="state" value="noauth">
-      <button type="submit" class="seg-btn {% if e.active == 'noauth' %}seg-on seg-on-noauth{% endif %}">无权限</button>
+      <button id="{{ card_id }}-noauth" type="submit" aria-pressed="{{ 'true' if e.active == 'noauth' else 'false' }}"
+              class="seg-btn {% if e.active == 'noauth' %}seg-on seg-on-noauth{% endif %}">无权限</button>
     </form>
     {% endif %}
     {% if 'error' in e.states %}
@@ -57,7 +68,8 @@
       <input type="hidden" name="method" value="{{ e.method }}">
       <input type="hidden" name="request_match" value="{{ e.request_match|default('') }}">
       <input type="hidden" name="state" value="error">
-      <button type="submit" class="seg-btn {% if e.active == 'error' %}seg-on seg-on-error{% endif %}">服务错误</button>
+      <button id="{{ card_id }}-error" type="submit" aria-pressed="{{ 'true' if e.active == 'error' else 'false' }}"
+              class="seg-btn {% if e.active == 'error' %}seg-on seg-on-error{% endif %}">服务错误</button>
     </form>
     {% endif %}
   </div>

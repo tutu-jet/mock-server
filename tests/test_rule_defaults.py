@@ -64,6 +64,11 @@ class RuleDefaultsTest(unittest.TestCase):
 
     def test_edit_restore_preserve_enabled_count_and_state_identity(self):
         rule_id = self.ids[403]
+        self.headers["HX-Current-URL"] += "&domain=case&enabled_only=true"
+        models.create_rule(
+            "[calendar] FocusedCalendarEvent", "*/FocusedCalendarEvent*", "GET",
+            200, "{}", "", enabled=False,
+        )
         models.set_rule_enabled(rule_id, True)
         models.increment_match_count(rule_id)
         result = self.edit(rule_id, status_code=418, response_body="custom", enabled="")
@@ -78,8 +83,12 @@ class RuleDefaultsTest(unittest.TestCase):
         self.assertIn('sb-noauth">418</span>', html)
         self.assertIn('value="noauth"', html)
         response = self.restore(rule_id)
-        self.assertIn('hx-swap-oob="outerHTML"', response.text)
-        self.assertIn('value="CaseListItem"', response.text)
+        self.assertIn('id="rules-content" hx-swap-oob="outerHTML"', response.text)
+        self.assertIn('id="page-toolbar" hx-swap-oob="outerHTML"', response.text)
+        self.assertIn('id="domain-case"', response.text)
+        self.assertIn('id="domain-calendar"', response.text)
+        self.assertNotIn('name="enabled_only"', response.text)
+        self.assertNotIn('name="q"', response.text)
         restored = models.get_rule(rule_id)
         self.assertEqual((restored.status_code, restored.enabled, restored.match_count), (403, True, 1))
         self.assertEqual(routes.matcher.match(
@@ -89,9 +98,9 @@ class RuleDefaultsTest(unittest.TestCase):
     def test_disabled_all_states_have_details_edit_and_restore(self):
         html = self.client.get("/rules").text
         self.assertNotIn(">查看详情</button>", html)
-        self.assertEqual(html.count('title="编辑" aria-label="编辑"'), 2)
+        self.assertEqual(html.count('title="Edit rule" aria-label="编辑 '), 2)
         self.assertEqual(html.count('hx-select="unset"'), 2)
-        self.assertLess(html.index('class="state-badge'), html.index('title="编辑" aria-label="编辑"'))
+        self.assertLess(html.index('class="state-badge'), html.index('title="Edit rule" aria-label="编辑 '))
         self.assertNotIn("rule-actions", html)
         self.assertNotIn("rule-action-row", html)
         for rule_id in self.ids.values():

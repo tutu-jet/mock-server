@@ -57,13 +57,43 @@ class CasePagesTest(unittest.TestCase):
         app.include_router(routes.router)
         self.client = TestClient(app)
 
-    def select(self, scope, state="nodata"):
+    def select(self, scope, state="nodata", target=None):
+        headers = {"HX-Request": "true", "HX-Current-URL": "http://localhost/rules"}
+        if target:
+            headers["HX-Target"] = target
         return self.client.post(
             "/rules/entity/state",
             data={"pattern": LEGACY_PATTERN, "method": "GET",
                   "request_match": scope, "state": state},
-            headers={"HX-Request": "true", "HX-Current-URL": "http://localhost/rules"},
+            headers=headers,
         )
+
+    def test_state_update_only_swaps_requested_card_shared_copy_and_counts(self):
+        variants = [r for r in models.list_rules() if r.request_match == "case-my"]
+        entity_id = min(r.id for r in variants)
+        error = next(r for r in variants if r.status_code == 500)
+        target = f"entity-{entity_id}-list"
+        response = self.select("case-my", "error", target=target)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("location", response.headers)
+        html = response.text
+        self.assertIn(f'<div id="{target}"', html)
+        self.assertIn(f'hx-select="#{target}"', html)
+        self.assertIn(
+            f'<div hx-swap-oob="outerHTML" id="entity-{entity_id}-overview"', html,
+        )
+        self.assertEqual(html.count('class="entity-card '), 2)
+        self.assertEqual(html.count(f'hx-get="/rules/{error.id}/edit"'), 2)
+        self.assertEqual(html.count('aria-pressed="true"'), 2)
+        self.assertIn('id="domain-count-case"', html)
+        self.assertIn("1/8 启用", html)
+        self.assertIn('id="rules-summary"', html)
+        self.assertIn("9 个接口 · 启用 1", html)
+        for unchanged in (
+            'id="rules-content"', 'id="page-toolbar"', 'id="domain-count-calendar"',
+            "CaseListItem-All", "CaseSystem", "<html",
+        ):
+            self.assertNotIn(unchanged, html)
 
     def test_decoded_query_order_status_and_pointer_are_not_hardcoded(self):
         for scope in ("case-my", "case-all", "case-detail"):
@@ -127,14 +157,10 @@ class CasePagesTest(unittest.TestCase):
         self.assertEqual(html.count('title="CaseListItem-My"'), 2)
         self.assertEqual(html.count('id="rules-content"'), 1)
         self.assertIn('hx-swap="outerHTML show:none"', html)
-        filtered = self.client.get("/rules?enabled_only=on").text
-        self.assertEqual(filtered.count('title="CaseListItem-My"'), 2)
-        self.assertNotIn('title="CaseSystem"', filtered)
-        self.assertNotIn('id="page-case-detail"', filtered)
-        self.client.post("/rules/domain/case/disable")
-        self.assertFalse(any(r.enabled for r in models.list_rules()))
+        self.assertIn('title="CaseSystem"', html)
+        self.assertIn('id="page-case-detail"', html)
 
-    def test_state_changes_are_isolated_and_keep_filter_redirect(self):
+    def test_state_changes_are_isolated_and_return_to_rules(self):
         self.select("case-my", "noauth")
         self.select("case-all", "error")
         self.select("case-detail", "nodata")
@@ -147,7 +173,8 @@ class CasePagesTest(unittest.TestCase):
             headers={"HX-Request": "true", "HX-Current-URL": "http://local/rules?q=Case&method=GET"},
             follow_redirects=False,
         )
-        self.assertEqual(response.headers["location"], "/rules?q=Case&method=GET")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("location", response.headers)
         self.assertEqual(sum(r.enabled for r in models.list_rules()), 2)
         before = [(r.id, r.enabled) for r in models.list_rules()]
         self.assertEqual(self.select("case-all", "typo").status_code, 422)

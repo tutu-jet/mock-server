@@ -1,70 +1,70 @@
 {% extends "base.html" %}
-{% block title %}规则 · mock-server{% endblock %}
-{% block heading %}规则{% endblock %}
-{% block subtitle %}匹配命中的请求会被改写返回{% endblock %}
+{% block title %}Rules · mock-server{% endblock %}
+{% block toolbar %}
+<div id="page-toolbar" class="toolbar rules-toolbar"
+     hx-target="#rules-content" hx-select="#rules-content"
+     hx-select-oob="#page-toolbar:outerHTML" hx-swap="outerHTML show:none"
+     hx-disabled-elt="#page-toolbar button, #rules-content button"
+     hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '更新失败，请重试'})"
+     hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
+  <div class="toolbar-spacer"></div>
+  <form class="master-control" method="post" action="/rules/master" hx-post="/rules/master">
+    <button class="btn btn-ghost master-toggle"
+            type="submit" aria-pressed="{{ 'true' if master_enabled else 'false' }}"
+            aria-label="{% if master_enabled %}关闭整体 Mock{% else %}开启整体 Mock{% endif %}"
+            title="{% if master_enabled %}Mock is on — click to disable{% else %}Mock is off — click to enable{% endif %}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v9M6.3 5.7a9 9 0 1 0 11.4 0"/>
+      </svg>
+    </button>
+  </form>
+  {% block rules_summary %}
+  <div id="rules-summary" class="muted">{{ total }} 个接口 · 启用 {{ enabled_count }}</div>
+  {% endblock %}
+</div>
+{% endblock %}
 
 {% block content %}
 <div id="rules-content"
      hx-target="this"
-     hx-select="#rules-content"
+     hx-select="#rules-content" hx-select-oob="#page-toolbar:outerHTML"
      hx-swap="outerHTML show:none"
      hx-disabled-elt="#rules-content button"
      hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '更新失败，请重试'})"
      hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
-
-<div class="master-bar {% if not master_enabled %}master-off{% endif %}">
-  <div class="master-info">
-    <span class="master-dot"></span>
-    <div>
-      <div class="master-title">
-        整体 Mock {% if master_enabled %}已开启{% else %}已关闭（全部透传）{% endif %}
-      </div>
-      <div class="muted">
-        {% if master_enabled %}按下方选中的态改写响应；关闭则忽略所有规则、直连真实后端。{% else %}当前所有请求直连真实后端，下方规则暂不生效。{% endif %}
-      </div>
-    </div>
-  </div>
-  <form method="post" action="/rules/master" hx-post="/rules/master">
-    <button class="btn {% if master_enabled %}btn-ghost{% else %}btn-primary{% endif %}" type="submit">
-      {% if master_enabled %}关闭整体 Mock{% else %}开启整体 Mock{% endif %}
-    </button>
-  </form>
-</div>
-
-<div class="toolbar">
-  <form method="get" action="/rules" class="toolbar-form">
-    <input class="input" type="text" name="q" placeholder="搜索名称或 URL pattern..." value="{{ q }}">
-    <select class="select" name="method">
-      {% for m in methods %}
-      <option value="{{ m }}" {% if m == method_filter %}selected{% endif %}>{{ m }}</option>
-      {% endfor %}
-    </select>
-    <label class="switch-inline">
-      <input type="checkbox" name="enabled_only" {% if enabled_only %}checked{% endif %}>
-      <span>仅显示启用</span>
-    </label>
-    <button class="btn btn-ghost" type="submit">筛选</button>
-  </form>
-  <div class="toolbar-spacer"></div>
-  <div class="muted">{{ total }} 个接口 · 启用 {{ enabled_count }}</div>
-</div>
-
 {% if groups %}
+<div class="rules-layout">
+  <nav class="rules-nav" aria-label="规则分类导航">
+    <h2 class="rules-nav-title">分类导航</h2>
+    <ul class="rules-nav-list">
+      {% for g in groups %}
+      <li>
+        <a class="rules-nav-link rules-nav-domain" href="#domain-{{ g.key }}">{{ g.label }}</a>
+        {% if g.pages is defined and g.pages %}
+        <ul class="rules-nav-pages">
+          {% for page in g.pages %}
+          <li><a class="rules-nav-link" href="#page-{{ g.key }}-{{ page.key }}">{{ page.label }}</a></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </nav>
+<div class="domain-list">
   {% for g in groups %}
-  <section class="domain-group">
-    <div class="domain-head">
+  <details class="domain-group" id="domain-{{ g.key }}">
+    <summary class="domain-head">
       <h3 class="domain-title">{{ g.label }}</h3>
-      <span class="domain-count {% if g.enabled_count %}has-active{% endif %}">
+      {% block domain_count scoped %}
+      <span id="domain-count-{{ g.key }}" class="domain-count {% if g.enabled_count %}has-active{% endif %}">
         {{ g.enabled_count }}/{{ g.total }} 启用
       </span>
-      <span class="spacer"></span>
-      {% if g.enabled_count %}
-      <form method="post" action="/rules/domain/{{ g.key }}/disable"
-            hx-post="/rules/domain/{{ g.key }}/disable">
-        <button class="btn btn-ghost btn-sm" type="submit" title="关闭本域所有接口，恢复透传">一键全关</button>
-      </form>
-      {% endif %}
-    </div>
+      {% endblock %}
+      <span class="domain-chevron" aria-hidden="true"></span>
+    </summary>
+    <div class="domain-content">
     {% if g.pages is defined %}
       {% for page in g.pages %}
       <section class="page-group" id="page-{{ g.key }}-{{ page.key }}"
@@ -84,13 +84,111 @@
         {% endfor %}
       </div>
     {% endif %}
-  </section>
+    </div>
+  </details>
   {% endfor %}
+</div>
+</div>
 {% else %}
 <div class="empty-state">
-  <div class="empty-icon">∅</div>
-  <div>没有匹配的接口</div>
+  <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+    <circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>
+  </svg>
+  <strong>暂无接口规则</strong>
+  <p>保存流量为规则后，接口会显示在这里。</p>
 </div>
 {% endif %}
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const storageKey = "mock-server.rules.open-domains";
+  const stateFocus = new WeakMap();
+
+  function updateNavigation(root) {
+    root.querySelectorAll(".rules-nav-link").forEach(link => {
+      if (link.hash === window.location.hash) {
+        link.setAttribute("aria-current", "location");
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
+  }
+
+  function navigateToCategory(hash) {
+    const root = document.getElementById("rules-content");
+    if (!root || !hash) return;
+    const link = Array.from(root.querySelectorAll(".rules-nav-link")).find(item => item.hash === hash);
+    if (!link) return;
+    const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+    if (!target) return;
+    target.closest(".domain-group").open = true;
+    updateNavigation(root);
+    const heading = target.querySelector(".domain-head, .page-title");
+    if (heading.matches(".page-title")) heading.setAttribute("tabindex", "-1");
+    heading.focus({preventScroll: true});
+    target.scrollIntoView({block: "start", behavior: "instant"});
+  }
+
+  document.body.addEventListener("click", event => {
+    const link = event.target.closest(".rules-nav-link");
+    if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (window.location.hash !== link.hash) history.pushState(null, "", link.hash);
+    navigateToCategory(link.hash);
+  });
+  window.addEventListener("hashchange", () => {
+    const root = document.getElementById("rules-content");
+    if (root) updateNavigation(root);
+    navigateToCategory(window.location.hash);
+  });
+
+  document.body.addEventListener("htmx:beforeRequest", event => {
+    const source = event.detail.elt;
+    const focused = document.activeElement;
+    if (source.matches(".seg-form") && source.contains(focused) && focused.id) {
+      stateFocus.set(event.detail.xhr, focused.id);
+    }
+  });
+
+  document.body.addEventListener("htmx:afterRequest", event => {
+    const id = stateFocus.get(event.detail.xhr);
+    stateFocus.delete(event.detail.xhr);
+    if (id && document.activeElement === document.body) {
+      document.getElementById(id)?.focus({preventScroll: true});
+    }
+  });
+
+  function initializeRuleGroups() {
+    const root = document.getElementById("rules-content");
+    if (!root) return;
+
+    const savedValue = localStorage.getItem(storageKey);
+    const savedGroups = savedValue === null ? null : savedValue.split(",").filter(Boolean);
+    const groups = root.querySelectorAll(".domain-group");
+
+    groups.forEach((group, index) => {
+      if (group.dataset.collapseInitialized) return;
+      if (savedGroups !== null) {
+        group.open = savedGroups.includes(group.id);
+      } else {
+        group.open = index === 0;
+      }
+
+      group.addEventListener("toggle", () => {
+        const openGroups = Array.from(root.querySelectorAll(".domain-group[open]"), item => item.id);
+        localStorage.setItem(storageKey, openGroups.join(","));
+      });
+      group.dataset.collapseInitialized = "true";
+    });
+    updateNavigation(root);
+  }
+
+  initializeRuleGroups();
+  navigateToCategory(window.location.hash);
+  document.body.addEventListener("htmx:afterSettle", initializeRuleGroups);
+})();
+</script>
 {% endblock %}

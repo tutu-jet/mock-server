@@ -1,8 +1,10 @@
 <div class="drawer-overlay">
-  <div class="drawer" onclick="event.stopPropagation()">
+  <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="rule-form-title"
+       onclick="event.stopPropagation()">
     <div class="drawer-head">
-      <h3>{% if rule and rule.id %}编辑规则 #{{ rule.id }}{% elif from_flow %}从流量 #{{ from_flow.id }} 保存为规则{% else %}新建规则{% endif %}</h3>
-      <button class="icon-btn" onclick="document.getElementById('drawer-root').innerHTML=''" title="关闭">
+      <h3 id="rule-form-title">{% if rule and rule.id %}编辑规则 #{{ rule.id }}{% elif from_flow %}从流量 #{{ from_flow.id }} 保存为规则{% else %}新建规则{% endif %}</h3>
+      <button class="icon-btn" type="button" aria-label="关闭编辑"
+              onclick="document.getElementById('drawer-root').innerHTML=''" title="Close">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -117,7 +119,7 @@
         <button class="btn btn-ghost" type="button"
                 hx-post="/rules/{{ rule.id }}/restore" hx-target="#drawer-root" hx-swap="innerHTML"
                 hx-confirm="恢复此规则最初保存的默认配置？当前启用状态和命中次数保持不变。"
-                data-confirm-title="恢复默认配置" data-confirm-ok="恢复默认"
+                data-confirm-title="Restore default configuration" data-confirm-ok="恢复默认"
                 {% if not rule.default_config %}disabled{% endif %}>恢复默认</button>
         {% endif %}
         <button class="btn btn-ghost" type="button"

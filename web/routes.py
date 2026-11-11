@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
@@ -204,8 +204,8 @@ def _group_rules_by_domain(rules):
         enabled = sum(1 for c in cards if c["active"])
         pages = []
         for page, label in (
-            ("overview", "概览 Overview"), ("list", "列表 List"),
-            ("detail", "详情 Detail"),
+            ("overview", "Overview"), ("list", "List"),
+            ("detail", "Detail"),
             ("bundle-list", "bundle list"),
             ("bundle-detail", "bundle detail"),
             ("unclassified", "未分类"),
@@ -226,48 +226,64 @@ def _group_rules_by_domain(rules):
 
 
 @router.get("/rules", response_class=HTMLResponse)
-def rules_page(q: str = "", method: str = "ALL", enabled_only: bool = False):
-    return render("rules.html", **_rules_context(q, method, enabled_only))
+def rules_page():
+    return render("rules.html", **_rules_context())
 
 
-def _rules_context(q="", method="ALL", enabled_only=False):
+def _rules_context():
     rules = models.list_rules()
-    # q/method 过滤仍按单条规则；enabled_only 在聚合后按 entity 过滤
-    filtered = _filter_rules(rules, q, method, False)
-    filtered_sorted = sorted(filtered, key=lambda r: r.id)
-    groups = _group_rules_by_domain(filtered_sorted)
-    if enabled_only:
-        for g in groups:
-            g["entities"] = [e for e in g["entities"] if e["active"]]
-            for page in g["pages"]:
-                page["entities"] = [e for e in page["entities"] if e["active"]]
-            g["pages"] = [page for page in g["pages"] if page["entities"]]
-        groups = [g for g in groups if g["entities"]]
     return dict(
         active_tab="rules",
-        groups=groups,
+        entity_state_partial=True,
+        groups=_group_rules_by_domain(sorted(rules, key=lambda r: r.id)),
         master_enabled=matcher.master_enabled,
         total=len({rule_identity(r) for r in rules}),
         enabled_count=len({rule_identity(r) for r in rules if r.enabled}),
-        q=q,
-        method_filter=method,
-        enabled_only=enabled_only,
-        methods=["ALL", "GET", "POST", "PUT", "DELETE", "PATCH", "*"],
     )
 
 
-def _rule_changed(request: Request, rule_id: int, message: str):
-    query = parse_qs(urlparse(request.headers.get("HX-Current-URL", "")).query)
-    ctx = _rules_context(
-        query.get("q", [""])[0], query.get("method", ["ALL"])[0],
-        query.get("enabled_only", [""])[0].lower() in ("on", "true", "1"),
-    )
+def _rule_changed(rule_id: int, message: str):
+    ctx = _rules_context()
     template = env.get_template("rules.html")
     content = "".join(template.blocks["content"](template.new_context(ctx)))
     content = content.replace('id="rules-content"', 'id="rules-content" hx-swap-oob="outerHTML"', 1)
-    response = HTMLResponse(rule_detail(rule_id).body + content.encode())
+    toolbar = "".join(template.blocks["toolbar"](template.new_context(ctx)))
+    toolbar = toolbar.replace('id="page-toolbar"', 'id="page-toolbar" hx-swap-oob="outerHTML"', 1)
+    response = HTMLResponse(rule_detail(rule_id).body + content.encode() + toolbar.encode())
     response.headers["HX-Trigger"] = json.dumps({"toast": {"kind": "success", "msg": message}})
     return response
+
+
+def _entity_state_update(identity, target):
+    ctx = _rules_context()
+    template = env.get_template("rules.html")
+    cards = []
+    counts = []
+    for group in ctx["groups"]:
+        affected = False
+        for page in group["pages"]:
+            for entity in page["entities"]:
+                if (entity["pattern"], entity["method"], entity["request_match"]) != identity:
+                    continue
+                affected = True
+                entity_id = min(rule.id for rule in entity["states"].values())
+                card_id = f"entity-{entity_id}-{page['key']}"
+                html = env.get_template("_entity_card.html").render(
+                    e=entity, page=page, entity_state_partial=True,
+                )
+                cards.append((card_id, html))
+        if affected:
+            count = "".join(template.blocks["domain_count"](
+                template.new_context({**ctx, "g": group}),
+            ))
+            counts.append(count.replace("<span ", '<span hx-swap-oob="outerHTML" ', 1))
+    summary = "".join(template.blocks["rules_summary"](template.new_context(ctx)))
+    counts.append(summary.replace("<div ", '<div hx-swap-oob="outerHTML" ', 1))
+    target = target or cards[0][0]
+    return HTMLResponse("".join(
+        html if card_id == target else html.replace("<div ", '<div hx-swap-oob="outerHTML" ', 1)
+        for card_id, html in cards
+    ) + "".join(counts))
 
 
 def _configuration_conflict(rule_id, config, enabled):
@@ -307,14 +323,6 @@ def rule_toggle(rule_id: int):
     return render("_rule_card.html", rule=models.get_rule(rule_id))
 
 
-def _rules_redirect(request: Request) -> RedirectResponse:
-    """HTMX 局部更新保留当前筛选；普通表单仍回到规则页。"""
-    query = ""
-    if request.headers.get("HX-Request") == "true":
-        query = urlparse(request.headers.get("HX-Current-URL", "")).query
-    return RedirectResponse("/rules" + ("?" + query if query else ""), status_code=303)
-
-
 @router.post("/rules/entity/state")
 def rule_set_entity_state(
     request: Request, pattern: str = Form(...), state: str = Form(...),
@@ -342,7 +350,11 @@ def rule_set_entity_state(
         if r.enabled != want:
             models.set_rule_enabled(r.id, want)
     matcher.reload_from_db()
-    return _rules_redirect(request)
+    if request.headers.get("HX-Request") == "true":
+        return _entity_state_update(
+            (pattern, method, request_match), request.headers.get("HX-Target"),
+        )
+    return RedirectResponse("/rules", status_code=303)
 
 
 @router.delete("/rules/{rule_id}", response_class=Response)
@@ -353,22 +365,14 @@ def rule_delete(rule_id: int):
 
 
 @router.post("/rules/master")
-def rules_master_toggle(request: Request):
+def rules_master_toggle():
     """整体 mock 总开关：关闭时所有请求透传，忽略全部规则。切换后回规则页。"""
     current = models.get_setting(MASTER_SWITCH_KEY, "1") != "0"
     models.set_setting(MASTER_SWITCH_KEY, "0" if current else "1")
     matcher.reload_from_db()
-    return _rules_redirect(request)
+    return RedirectResponse("/rules", status_code=303)
 
 
-@router.post("/rules/domain/{domain}/disable")
-def rules_domain_disable(domain: str, request: Request):
-    """一键关闭某个域下的所有规则（恢复该域透传）。操作后回规则页。"""
-    for r in models.list_rules():
-        if _rule_domain(r) == domain and r.enabled:
-            models.set_rule_enabled(r.id, False)
-    matcher.reload_from_db()
-    return _rules_redirect(request)
 @router.get("/rules/new", response_class=HTMLResponse)
 def rule_new_form():
     return render("_rule_form.html", rule=None, methods=METHODS)
@@ -393,7 +397,7 @@ def rule_detail(rule_id: int):
 
 
 @router.post("/rules/{rule_id}/restore", response_class=HTMLResponse)
-def rule_restore(rule_id: int, request: Request):
+def rule_restore(rule_id: int):
     rule = models.get_rule(rule_id)
     if not rule:
         raise HTTPException(404)
@@ -408,7 +412,7 @@ def rule_restore(rule_id: int, request: Request):
         return _toast_resp(f"恢复与规则 #{conflict.id} 冲突，请先调整该规则", "error")
     models.update_rule(rule_id, **config, enabled=rule.enabled)
     matcher.reload_from_db()
-    return _rule_changed(request, rule_id, "已恢复默认配置，启用状态保持不变")
+    return _rule_changed(rule_id, "已恢复默认配置，启用状态保持不变")
 
 
 @router.post("/rules", response_class=HTMLResponse)
@@ -810,18 +814,6 @@ def _find_same_pattern_disabled(url_pattern: str, method: str):
     return None
 
 
-def _filter_rules(rules, q: str, method: str, enabled_only: bool):
-    out = rules
-    if method != "ALL":
-        out = [r for r in out if r.method == method or r.method == "*"]
-    if enabled_only:
-        out = [r for r in out if r.enabled]
-    if q.strip():
-        kw = q.strip().lower()
-        out = [r for r in out if kw in r.name.lower() or kw in r.url_pattern.lower()]
-    return out
-
-
 def _save_rule(rule_id, name, url_pattern, method, status_code,
                response_headers, response_body, enabled, request_match="", request=None):
     name = name.strip()
@@ -866,7 +858,7 @@ def _save_rule(rule_id, name, url_pattern, method, status_code,
         )
     matcher.reload_from_db()
     if rule_id and request is not None:
-        return _rule_changed(request, rule_id, "规则已保存，启用状态保持不变")
+        return _rule_changed(rule_id, "规则已保存，启用状态保持不变")
     resp = HTMLResponse("")
     resp.headers["HX-Redirect"] = "/rules"
     return resp

@@ -1,9 +1,10 @@
 <div class="drawer-overlay"
      hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '规则操作失败，请刷新后重试'})"
      hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
-  <div class="drawer" onclick="event.stopPropagation()">
+  <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="rule-detail-title"
+       onclick="event.stopPropagation()">
     <div class="drawer-head">
-      <h3>规则详情 #{{ rule.id }}</h3>
+      <h3 id="rule-detail-title">规则详情 #{{ rule.id }}</h3>
       <button class="icon-btn" type="button" aria-label="关闭详情"
               onclick="document.getElementById('drawer-root').innerHTML=''">×</button>
     </div>
@@ -37,7 +38,7 @@
         <button class="btn btn-ghost" type="button"
                 hx-post="/rules/{{ rule.id }}/restore" hx-target="#drawer-root" hx-swap="innerHTML"
                 hx-confirm="恢复此规则最初保存的默认配置？当前启用状态和命中次数保持不变。"
-                data-confirm-title="恢复默认配置" data-confirm-ok="恢复默认"
+                data-confirm-title="Restore default configuration" data-confirm-ok="恢复默认"
                 {% if not rule.default_config %}disabled{% endif %}>恢复默认</button>
         <button class="btn btn-primary" type="button"
                 hx-get="/rules/{{ rule.id }}/edit" hx-target="#drawer-root" hx-swap="innerHTML">编辑</button>
