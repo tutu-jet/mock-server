@@ -42,6 +42,21 @@ env = Environment(
 )
 env.filters["strftime"] = lambda ts, fmt="%H:%M:%S": time.strftime(fmt, time.localtime(float(ts)))
 env.filters["human_bytes"] = flows.human_bytes
+
+
+def _pretty_json(text: str) -> Optional[str]:
+    """把一行压缩的 JSON 格式化成带缩进的多行字符串。
+    不是合法 JSON（如 HTML、纯文本、被截断的片段）时返回 None，模板回退到原文。"""
+    s = (text or "").strip()
+    if not s or s[0] not in "{[":
+        return None
+    try:
+        return json.dumps(json.loads(s), ensure_ascii=False, indent=2)
+    except (ValueError, TypeError):
+        return None
+
+
+env.filters["pretty_json"] = _pretty_json
 env.globals["MAX_BODY_BYTES"] = flows.MAX_BODY_BYTES
 env.globals["REQUEST_MATCHES"] = REQUEST_MATCHES
 

@@ -27,6 +27,7 @@
 {% endfor %}</pre>
 
       {% if flow.req_body %}
+      {% set req_pretty = flow.req_body | pretty_json if not flow.req_body_truncated else None %}
       <h4>Request Body
         <span class="body-size">{{ flow.req_body_size | human_bytes }}</span>
         {% if flow.req_body_truncated %}<span class="trunc-tag">截断 · 仅显示前 {{ MAX_BODY_BYTES | human_bytes }}</span>{% endif %}
@@ -36,7 +37,7 @@
           <a class="body-btn" title="下载完整 body" href="/flows/{{ flow.id }}/body/req" download>下载</a>
         </span>
       </h4>
-      <pre class="mono small{% if flow.req_body_truncated %} truncated{% endif %}">{{ flow.req_body }}{% if flow.req_body_truncated %}
+      <pre class="mono small{% if req_pretty %} json{% endif %}{% if flow.req_body_truncated %} truncated{% endif %}">{{ req_pretty if req_pretty else flow.req_body }}{% if flow.req_body_truncated %}
 
 <span class="trunc-foot">--- 已截断，原始 {{ flow.req_body_size | human_bytes }}，剩余 {{ (flow.req_body_size - MAX_BODY_BYTES) | human_bytes }} 未显示 ---</span>{% endif %}</pre>
       {% endif %}
@@ -46,6 +47,7 @@
 {% endfor %}</pre>
 
       {% if flow.resp_body %}
+      {% set resp_pretty = flow.resp_body | pretty_json if not flow.resp_body_truncated else None %}
       <h4>Response Body
         <span class="body-size">{{ flow.resp_body_size | human_bytes }}</span>
         {% if flow.resp_body_truncated %}<span class="trunc-tag">截断 · 仅显示前 {{ MAX_BODY_BYTES | human_bytes }}</span>{% endif %}
@@ -55,7 +57,7 @@
           <a class="body-btn" title="下载完整 body" href="/flows/{{ flow.id }}/body/resp" download>下载</a>
         </span>
       </h4>
-      <pre class="mono small{% if flow.resp_body_truncated %} truncated{% endif %}">{{ flow.resp_body }}{% if flow.resp_body_truncated %}
+      <pre class="mono small{% if resp_pretty %} json{% endif %}{% if flow.resp_body_truncated %} truncated{% endif %}">{{ resp_pretty if resp_pretty else flow.resp_body }}{% if flow.resp_body_truncated %}
 
 <span class="trunc-foot">--- 已截断，原始 {{ flow.resp_body_size | human_bytes }}，剩余 {{ (flow.resp_body_size - MAX_BODY_BYTES) | human_bytes }} 未显示 ---</span>{% endif %}</pre>
       {% endif %}

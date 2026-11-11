@@ -449,6 +449,12 @@ nav { display: flex; flex-direction: column; gap: 4px; }
   border-left: 2px solid #d97a3a;
   max-height: 360px;
 }
+.flow-detail pre.small.json {
+  max-height: 460px;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
 .trunc-foot {
   display: inline-block;
   color: #b8541a; font-weight: 500;
@@ -469,7 +475,7 @@ nav { display: flex; flex-direction: column; gap: 4px; }
 /* help */
 .help-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   max-width: 1400px;
 }
