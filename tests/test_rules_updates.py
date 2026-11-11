@@ -97,7 +97,7 @@ class RulesUpdatesTest(unittest.TestCase):
         labels = {
             "case": "Case", "servicerequest": "Service Request", "system": "System",
             "calendar": "Calendar", "consumption": "Consumption",
-            "provisioning": "Provisioning", "other": "Other",
+            "provisioning": "Provisioning", "notification": "Notification", "other": "Other",
         }
         self.assertEqual(routes.DOMAIN_LABELS, labels)
         for domain in labels:

@@ -74,6 +74,7 @@ def init_db() -> None:
         migrate_rule_defaults(conn)
         migrate_system_rules(conn)
         migrate_calendar_rules(conn)
+        migrate_notification_rules(conn)
     with connect_flows() as conn:
         conn.executescript(FLOWS_SCHEMA)
 
@@ -149,3 +150,17 @@ def migrate_calendar_rules(conn: sqlite3.Connection) -> bool:
             with closing(sqlite3.connect(backup_path)) as backup:
                 conn.backup(backup)
     return add_calendar_rules(conn)
+
+
+def migrate_notification_rules(conn: sqlite3.Connection) -> bool:
+    from app.notification_rules import MIGRATION_KEY, migrate_notification_rules as add_notification_rules
+
+    pending = conn.execute("SELECT 1 FROM settings WHERE key=?", (MIGRATION_KEY,)).fetchone() is None
+    if pending:
+        backup_path = DB_PATH.with_name(DB_PATH.name + ".bak-notification-list-v1")
+        if not backup_path.exists():
+            with backup_path.open("xb"):
+                pass
+            with closing(sqlite3.connect(backup_path)) as backup:
+                conn.backup(backup)
+    return add_notification_rules(conn)

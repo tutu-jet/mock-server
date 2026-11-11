@@ -91,7 +91,7 @@ def root():
 # ---------- 规则页 ----------
 
 # 规则名以 "[域] ..." 开头，这里把域提取出来用于分组。域顺序固定，未知归到"其他"。
-DOMAIN_ORDER = ["case", "servicerequest", "system", "calendar", "consumption", "provisioning"]
+DOMAIN_ORDER = ["case", "servicerequest", "system", "calendar", "consumption", "provisioning", "notification"]
 DOMAIN_LABELS = {
     "case": "Case",
     "servicerequest": "Service Request",
@@ -99,6 +99,7 @@ DOMAIN_LABELS = {
     "calendar": "Calendar",
     "consumption": "Consumption",
     "provisioning": "Provisioning",
+    "notification": "Notification",
     "other": "Other",
 }
 
@@ -142,6 +143,8 @@ def _card_pages(card) -> tuple[str, ...]:
         if service and f"/odata/{service}/{entity}" in card["pattern"]:
             return ("list",)
         return ("unclassified",)
+    if card["domain"] == "notification":
+        return ("list",)
     if card["domain"] == "system":
         if card.get("request_match") == "system-list":
             return ("list",)
