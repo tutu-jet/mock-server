@@ -813,11 +813,10 @@ body.drawer-resizing .drawer { animation: none; }
   padding: 14px;
   display: flex; flex-direction: column; gap: 12px;
   min-width: 0;
+  cursor: pointer;
   transition: border-color 0.15s;
 }
 .entity-card:hover { border-color: var(--border-strong); }
-.entity-edit::after { content: ""; position: absolute; inset: 0; }
-.entity-card .rule-tip, .entity-card .seg { position: relative; z-index: 1; }
 .entity-card:has(.entity-edit:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
 .entity-card.is-active { border-color: var(--primary); }
 .entity-card.state-noauth { border-color: #a84800; }
