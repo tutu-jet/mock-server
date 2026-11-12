@@ -15,6 +15,8 @@
   <span class="help-connection"><span class="muted">默认 IP</span><b class="mono">{{ lan_ip }}</b></span>
   <div class="toolbar-spacer"></div>
   <a class="btn btn-ghost" href="#help-setup">接入步骤</a>
+  <a class="btn btn-ghost" href="#help-android">Android</a>
+  <a class="btn btn-ghost" href="#help-ios">iOS</a>
   <a class="btn btn-ghost" href="#help-troubleshooting">常见问题</a>
 </div>
 {% endblock %}
@@ -22,102 +24,102 @@
 {% block content %}
 <div class="help-layout">
   <section class="help-guide" id="help-setup" aria-labelledby="help-setup-title">
-    <h2 class="help-section-title" id="help-setup-title">手机接入</h2>
-    <p class="help-intro">先验证网络，再设置代理和证书。按顺序展开下方步骤。</p>
+    <h2 class="help-section-title" id="help-setup-title">通用准备 · Android / iOS</h2>
+    <p class="help-intro">先完成通用准备，再按下方对应平台设置代理、安装并信任证书。</p>
 
-    <details class="help-disclosure">
-      <summary>开始前检查{{ disclosure_icon() }}</summary>
-      <div class="help-disclosure-body">
-        <ul class="help-list">
-          <li>手机和电脑连接<b>同一个 Wi-Fi</b>；公司网络隔离时，可让电脑连接手机热点。</li>
-          <li>电脑防火墙允许 <b class="mono">{{ proxy_port }}</b> 入站。Windows 首次弹窗时选择「允许」。</li>
-          <li>mock-server 已通过 <code>python main.py</code> 启动，控制台无报错。</li>
+    <div class="help-common-grid">
+    <div>
+      <details class="help-disclosure">
+        <summary>开始前检查{{ disclosure_icon() }}</summary>
+        <div class="help-disclosure-body">
+          <ul class="help-list">
+            <li>手机和电脑连接<b>同一个 Wi-Fi</b>；公司网络隔离时，可让电脑连接手机热点。</li>
+            <li>电脑防火墙允许代理端口 <b class="mono">{{ proxy_port }}</b> 和 UI 端口 <b class="mono">{{ ui_port }}</b> 入站。Windows 首次弹窗时选择「允许」。</li>
+            <li>mock-server 已通过 <code>python main.py</code> 启动，控制台无报错。</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="help-disclosure" id="help-network" open>
+        <summary>步骤 0 · 验证网络连通{{ disclosure_icon() }}</summary>
+        <div class="help-disclosure-body">
+          <p>先不设置代理，用手机浏览器访问电脑的 UI 地址：</p>
+          <a class="help-address mono" href="http://{{ lan_ip }}:{{ ui_port }}" target="_blank" rel="noopener noreferrer">http://{{ lan_ip }}:{{ ui_port }}</a>
+          <ul class="help-list">
+            <li><b>能打开帮助页</b>：网络已连通，继续步骤 1。</li>
+            <li><b>打不开</b>：换「候选 IP」中的地址逐个尝试。仍无法连接时，检查 Wi-Fi 隔离、防火墙或改用手机热点。</li>
+          </ul>
+          <p class="muted">这里使用 UI 端口 {{ ui_port }}，不是代理端口 {{ proxy_port }}。通用地址为 http://&lt;电脑 IP&gt;:{{ ui_port }}。</p>
+        </div>
+      </details>
+
+      <details class="help-disclosure" id="help-proxy">
+        <summary>步骤 1 · 代理参数{{ disclosure_icon() }}</summary>
+        <div class="help-disclosure-body">
+          <p>在当前 Wi-Fi 的设置中选择手动代理。具体入口见下方 Android / iOS 指南，两端使用相同参数：</p>
+          <ul class="help-list">
+            <li><b>服务器 / 主机名</b>：步骤 0 中已验证可连接的电脑 IP，当前候选为 <b class="mono">{{ lan_ip }}</b>。</li>
+            <li><b>端口</b>：<b class="mono">{{ proxy_port }}</b>。</li>
+          </ul>
+          <p class="muted">填写电脑局域网 IP，不要填 localhost 或 127.0.0.1。</p>
+        </div>
+      </details>
+
+      <details class="help-disclosure" id="help-certificate">
+        <summary>步骤 2 · 下载 HTTPS 证书{{ disclosure_icon() }}</summary>
+        <div class="help-disclosure-body">
+          <p>设置代理后，用手机浏览器访问 <a href="http://mitm.it" target="_blank" rel="noopener noreferrer" class="mono">http://mitm.it</a>（iOS 使用 Safari）。必须使用 <b>http</b>，不要使用 https。能看到下载页，才说明代理已连通。</p>
+          <p>选择对应平台下载证书，再按下方指南安装并完成信任配置。</p>
+          <p class="muted">若页面提示「traffic is not passing through mitmproxy」，回步骤 1 核对代理 IP 和端口。若步骤 0 也无法连接，先解决网络问题。</p>
+        </div>
+      </details>
+    </div>
+      <section aria-labelledby="help-addresses-title">
+        <h2 class="help-section-title" id="help-addresses-title">候选 IP</h2>
+        <p class="help-intro">多网卡可能产生多个 IP。用步骤 0 逐个验证，选择手机能连接的地址。</p>
+        <ul class="help-address-list">
+          {% for ip in lan_ips %}
+          <li>
+            <a class="mono" href="http://{{ ip }}:{{ ui_port }}" target="_blank" rel="noopener noreferrer">{{ ip }}</a>
+            {% if loop.first %}<span class="muted">默认网卡 · 优先尝试</span>{% endif %}
+          </li>
+          {% endfor %}
         </ul>
-      </div>
-    </details>
+        <details class="help-disclosure">
+          <summary>手动查询电脑 IP{{ disclosure_icon() }}</summary>
+          <div class="help-disclosure-body">
+            <p>自动探测不准确时，使用当前 Wi-Fi 下的局域网 IP，而非公网 IP。</p>
+            <ul class="help-list">
+              <li><b>macOS</b>：执行 <code>ipconfig getifaddr en0</code>。Wi-Fi 通常为 en0，网线或热点可能为 en1；也可查看「系统设置 → 网络 → 当前连接 → 详细信息 → TCP/IP」。</li>
+              <li><b>Windows</b>：执行 <code>ipconfig</code>，查看当前网卡的「IPv4 地址」。</li>
+            </ul>
+            <p class="muted">局域网 IP 通常类似 192.168.x.x 或 10.x.x.x。</p>
+          </div>
+        </details>
+      </section>
 
-    <details class="help-disclosure" id="help-network" open>
-      <summary>步骤 0 · 验证网络连通{{ disclosure_icon() }}</summary>
-      <div class="help-disclosure-body">
-        <p>先不设置代理，用手机浏览器访问电脑的 UI 地址：</p>
-        <a class="help-address mono" href="http://{{ lan_ip }}:{{ ui_port }}" target="_blank" rel="noopener noreferrer">http://{{ lan_ip }}:{{ ui_port }}</a>
-        <ul class="help-list">
-          <li><b>能打开帮助页</b>：网络已连通，继续步骤 1。</li>
-          <li><b>打不开</b>：换「候选 IP」中的地址逐个尝试。仍无法连接时，检查 Wi-Fi 隔离、防火墙或改用手机热点。</li>
-        </ul>
-        <p class="muted">这里使用 UI 端口 {{ ui_port }}，不是代理端口 {{ proxy_port }}。通用地址为 http://&lt;电脑 IP&gt;:{{ ui_port }}。</p>
-      </div>
-    </details>
-
-    <details class="help-disclosure" id="help-proxy">
-      <summary>步骤 1 · 设置 Wi-Fi 代理{{ disclosure_icon() }}</summary>
-      <div class="help-disclosure-body">
-        <ol class="help-list">
-          <li>进入手机「设置 → Wi-Fi」，打开当前网络的详情或「修改网络」。</li>
-          <li>展开「高级选项」，将「代理」设为<b>手动</b>。</li>
-          <li>主机名填写步骤 0 中<b>已验证可连接的 IP</b>，端口填 <b class="mono">{{ proxy_port }}</b>，保存。</li>
-        </ol>
-        <p class="muted">MIUI/HyperOS、ColorOS、OneUI 的入口不同，可在 Wi-Fi 详情中搜索「代理」。</p>
-      </div>
-    </details>
-
-    <details class="help-disclosure" id="help-certificate">
-      <summary>步骤 2 · 安装 HTTPS 证书{{ disclosure_icon() }}</summary>
-      <div class="help-disclosure-body">
-        <ol class="help-list">
-          <li>手机浏览器访问 <a href="http://mitm.it" target="_blank" rel="noopener noreferrer" class="mono">http://mitm.it</a>，必须使用 <b>http</b>，不要使用 https。能看到下载页，才说明代理已连通。</li>
-          <li>点击 <b>Android</b> 下载 <code>mitmproxy-ca-cert.cer</code>。</li>
-          <li>进入「设置 → 安全 → 加密与凭据 → 安装证书 → CA 证书」，选择下载的文件，命名并保存。</li>
-        </ol>
-        <p class="muted">若页面提示「traffic is not passing through mitmproxy」，回步骤 1 核对代理 IP 和端口。若步骤 0 也无法连接，先解决网络问题。</p>
-      </div>
-    </details>
-
-    <details class="help-disclosure" id="help-app-https">
-      <summary>步骤 3 · 配置 App 的 HTTPS 信任{{ disclosure_icon() }}</summary>
-      <div class="help-disclosure-body">
-        <p>Android 7+ 的 App 默认不信任用户安装的 CA。浏览器可以抓包，但 App 需要满足以下条件之一：</p>
-        <ul class="help-list">
-          <li><b>App 声明信任用户证书</b>：在 <code>network_security_config.xml</code> 中加入 <code>&lt;certificates src="user"/&gt;</code>，建议仅用于 debug 构建，重新打包安装。</li>
-          <li><b>系统证书</b>：在 root 设备或模拟器中，将证书放入 <code>/system/etc/security/cacerts/</code>。</li>
-          <li><b>frida / objection</b>：运行时绕过 SSL Pinning。</li>
-        </ul>
-      </div>
-    </details>
-
-    <details class="help-disclosure" open>
-      <summary>验证抓包和 Mock{{ disclosure_icon() }}</summary>
-      <div class="help-disclosure-body">
-        <ol class="help-list">
-          <li>手机访问 HTTP 站点，如 <a href="http://example.com" target="_blank" rel="noopener noreferrer" class="mono">http://example.com</a>。</li>
-          <li>打开顶部「<a href="/flows">流量</a>」页，确认出现对应请求。</li>
-          <li>在「<a href="/rules">规则</a>」页启用规则（或新建 URL pattern 为 <code>https://example.com/*</code> 的规则），确保整体 Mock 已开启，再访问匹配地址验证响应。</li>
-        </ol>
-      </div>
-    </details>
+    </div>
   </section>
 
-  <aside class="help-reference">
-    <section aria-labelledby="help-addresses-title">
-      <h2 class="help-section-title" id="help-addresses-title">候选 IP</h2>
-      <p class="help-intro">多网卡可能产生多个 IP。用步骤 0 逐个验证，选择手机能连接的地址。</p>
-      <ul class="help-address-list">
-        {% for ip in lan_ips %}
-        <li>
-          <a class="mono" href="http://{{ ip }}:{{ ui_port }}" target="_blank" rel="noopener noreferrer">{{ ip }}</a>
-          {% if loop.first %}<span class="muted">默认网卡 · 优先尝试</span>{% endif %}
-        </li>
-        {% endfor %}
-      </ul>
-      <details class="help-disclosure">
-        <summary>手动查询电脑 IP{{ disclosure_icon() }}</summary>
+  <div class="help-platforms" aria-label="各平台接入指南">
+    {% include "_help_android.html" %}
+    {% include "_help_ios.html" %}
+  </div>
+
+  <div class="help-common-grid help-reference">
+    <section aria-labelledby="help-validation-title">
+      <h2 class="help-section-title" id="help-validation-title">通用验证</h2>
+      <details class="help-disclosure" open>
+        <summary>验证抓包和 Mock{{ disclosure_icon() }}</summary>
         <div class="help-disclosure-body">
-          <p>自动探测不准确时，使用当前 Wi-Fi 下的局域网 IP，而非公网 IP。</p>
-          <ul class="help-list">
-            <li><b>macOS</b>：执行 <code>ipconfig getifaddr en0</code>。Wi-Fi 通常为 en0，网线或热点可能为 en1；也可查看「系统设置 → 网络 → 当前连接 → 详细信息 → TCP/IP」。</li>
-            <li><b>Windows</b>：执行 <code>ipconfig</code>，查看当前网卡的「IPv4 地址」。</li>
-          </ul>
-          <p class="muted">局域网 IP 通常类似 192.168.x.x 或 10.x.x.x。</p>
+          <ol class="help-list">
+            <li>手机访问 HTTP 站点，如 <a href="http://example.com" target="_blank" rel="noopener noreferrer" class="mono">http://example.com</a>。</li>
+            <li>打开顶部「<a href="/flows">流量</a>」页，确认出现对应请求。</li>
+            <li>再访问 <a href="https://example.com" target="_blank" rel="noopener noreferrer" class="mono">https://example.com</a>，确认 HTTPS 请求也出现在流量页，且没有证书错误。</li>
+            <li>在「<a href="/rules">规则</a>」页启用规则，确保整体 Mock 已开启，再触发 App 的对应接口，确认命中规则且响应符合预期。</li>
+            <li>Android 和 iOS 调用相同接口、请求方法并符合匹配条件时，可共用现有规则；请求不同则需调整或新增规则。</li>
+            <li>测试结束后，将手机 Wi-Fi 代理恢复为关闭。</li>
+          </ol>
         </div>
       </details>
     </section>
@@ -139,13 +141,13 @@
       <details class="help-disclosure">
         <summary>HTTP 正常，HTTPS 报错{{ disclosure_icon() }}</summary>
         <div class="help-disclosure-body">
-          <p>根证书未安装或未被信任。重做步骤 2，安装到「CA 证书」，不要选择「VPN 和应用证书」。</p>
+          <p>根证书未安装或未被信任。Android 按左侧指南安装到「CA 证书」；iOS 按右侧指南安装描述文件后，还要在「证书信任设置」开启完全信任。</p>
         </div>
       </details>
       <details class="help-disclosure">
         <summary>浏览器能抓包，App 抓不到{{ disclosure_icon() }}</summary>
         <div class="help-disclosure-body">
-          <p>该 App 可能不信任用户证书，或启用了 SSL Pinning。按步骤 3 检查 App 的证书信任配置。</p>
+          <p>先按对应平台的步骤 3 检查证书信任。如果仍失败，App 可能启用了 SSL Pinning（证书绑定）或自定义证书校验，需要调整测试版本。若流量页完全没有请求，也要检查 App 是否遵循系统 Wi-Fi 代理设置。</p>
         </div>
       </details>
       <details class="help-disclosure">
@@ -161,6 +163,6 @@
         </div>
       </details>
     </section>
-  </aside>
+  </div>
 </div>
 {% endblock %}

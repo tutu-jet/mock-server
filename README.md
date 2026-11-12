@@ -1,6 +1,6 @@
 # mock-server
 
-本地 HTTP/HTTPS 代理 + Web UI，按规则改返回值，主要给安卓真机调试用。
+本地 HTTP/HTTPS 代理 + Web UI，按规则改返回值，支持 Android 和 iOS 真机调试。
 
 - 抓所有经过代理的流量，实时显示
 - 按 host / path / method 配置 mock 规则，命中则替换 status / headers / body
@@ -95,8 +95,25 @@ mock-server/
 
 ## 手机配代理（HTTPS 抓包）
 
-1. 手机 WiFi → 当前网络 → 高级 → 代理 → 手动；主机名填电脑 IP，端口 `9077`
-2. 手机浏览器访问 `http://mitm.it` 下载并安装 CA 证书
-3. Android 7+ 默认不信任用户 CA：
-   - 自己的 app：`network_security_config.xml` 加 `<certificates src="user"/>`
-   - 第三方 app：需 root 把 CA 装到系统层
+完整步骤见 Web UI 的「帮助」页：通用准备集中展示，Android 指南在左，iOS 指南在右，窄屏自动上下排列。
+
+### 通用准备
+
+1. 手机和电脑连接同一个 Wi-Fi，先用手机浏览器访问 `http://<电脑 IP>:9088` 验证连通。
+2. 在当前 Wi-Fi 中设置手动代理，服务器填电脑局域网 IP，端口填 `9077`。
+3. 设置代理后访问 `http://mitm.it`（iOS 使用 Safari），选择对应平台下载证书。
+
+### Android
+
+1. Wi-Fi → 当前网络 → 高级选项 → 代理 → 手动。
+2. 将下载的 `mitmproxy-ca-cert.cer` 安装到「CA 证书」。
+3. 面向 Android 7+ 的 App 默认不信任用户 CA。自己的测试 App 在 `network_security_config.xml` 的信任配置中加入 `<certificates src="user"/>`，确保 Manifest 引用该配置，建议仅用于 debug 构建。其他测试方案需在具备 root 权限的设备或模拟器上安装为系统 CA，具体方式随 Android 版本不同。
+
+### iOS
+
+1. 设置 → Wi-Fi → 当前网络右侧 ⓘ → 配置代理 → 手动。
+2. 下载证书后，在「设置 → 通用 → VPN 与设备管理」中安装 mitmproxy 描述文件。
+3. 在「设置 → 通用 → 关于本机 → 证书信任设置」中开启 mitmproxy 根证书的完全信任。只安装描述文件还不够。
+4. 使用系统默认 HTTPS 校验的 App（如普通 URLSession 请求）通常无需修改代码，也不需要为了 HTTPS 代理抓包关闭 ATS。
+
+两端若启用 SSL Pinning（证书绑定）或自定义证书校验，还需要调整测试版本中的校验。请求接口、方法和匹配条件相同时，可共用现有 Mock 规则。接入后到「流量」页验证 HTTP / HTTPS 请求，再启用规则验证 Mock；测试结束后关闭手机 Wi-Fi 代理。

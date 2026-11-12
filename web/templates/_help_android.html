@@ -1,0 +1,38 @@
+<section class="help-platform" id="help-android" aria-labelledby="help-android-title">
+  <h2 class="help-section-title" id="help-android-title">Android</h2>
+  <p class="help-intro">设置 Wi-Fi 代理，安装 CA 证书，再配置测试 App 的证书信任。</p>
+  <details class="help-disclosure" id="help-android-proxy" open>
+    <summary>步骤 1 · 设置 Wi-Fi 代理{{ disclosure_icon() }}</summary>
+    <div class="help-disclosure-body">
+      <ol class="help-list">
+        <li>进入手机「设置 → Wi-Fi」，打开当前网络的详情或「修改网络」。</li>
+        <li>展开「高级选项」，将「代理」设为<b>手动</b>。</li>
+        <li>主机名填写步骤 0 中<b>已验证可连接的 IP</b>，端口填 <b class="mono">{{ proxy_port }}</b>，保存。</li>
+      </ol>
+      <p class="muted">MIUI/HyperOS、ColorOS、OneUI 的入口不同，可在 Wi-Fi 详情中搜索「代理」。</p>
+    </div>
+  </details>
+
+  <details class="help-disclosure" id="help-android-certificate">
+    <summary>步骤 2 · 安装 HTTPS 证书{{ disclosure_icon() }}</summary>
+    <div class="help-disclosure-body">
+      <ol class="help-list">
+        <li>在通用步骤 2 的证书下载页选择 <b>Android</b>，下载 <code>mitmproxy-ca-cert.cer</code>。</li>
+        <li>进入「设置 → 安全 → 加密与凭据 → 安装证书 → CA 证书」，选择下载的文件，命名并保存。</li>
+      </ol>
+      <p class="muted">不同系统的入口名称可能不同。选择「CA 证书」，不要选择「VPN 和应用证书」。</p>
+    </div>
+  </details>
+
+  <details class="help-disclosure" id="help-app-https">
+    <summary>步骤 3 · 配置 App 的 HTTPS 信任{{ disclosure_icon() }}</summary>
+    <div class="help-disclosure-body">
+      <p>面向 Android 7+ 的 App 默认不信任用户安装的 CA。浏览器可以抓包，但 App 通常还需要配置证书信任：</p>
+      <ul class="help-list">
+        <li><b>App 声明信任用户证书</b>：在 <code>network_security_config.xml</code> 的信任配置中加入 <code>&lt;certificates src="user"/&gt;</code>，并确保 Manifest 引用该配置；建议仅用于 debug 构建，重新打包安装。</li>
+        <li><b>系统证书</b>：在具备 root 权限的测试设备或模拟器上安装为系统 CA。旧版常见路径为 <code>/system/etc/security/cacerts/</code>，新版安装方式可能不同。</li>
+      </ul>
+      <p >如果 App 启用了 SSL Pinning（证书绑定）或自定义证书校验，还需要调整测试版本中的校验；仅信任用户 CA 不足以绕过证书绑定。已有测试流程也可使用 frida / objection 调整运行时校验。</p>
+    </div>
+  </details>
+</section>

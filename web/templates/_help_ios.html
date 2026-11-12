@@ -1,0 +1,39 @@
+<section class="help-platform" id="help-ios" aria-labelledby="help-ios-title">
+  <h2 class="help-section-title" id="help-ios-title">iOS</h2>
+  <p class="help-intro">适用于 iPhone 真机。安装证书后，还要开启完全信任；通常无需修改 App 代码。</p>
+
+  <details class="help-disclosure" id="help-ios-proxy" open>
+    <summary>步骤 1 · 设置 Wi-Fi 代理{{ disclosure_icon() }}</summary>
+    <div class="help-disclosure-body">
+      <ol class="help-list">
+        <li>进入「设置 → Wi-Fi」，点击当前网络右侧的 <b>ⓘ</b>。</li>
+        <li>进入「配置代理」，选择<b>手动</b>。</li>
+        <li>服务器填写已验证可连接的电脑 IP，端口填 <b class="mono">{{ proxy_port }}</b>，不启用鉴定，保存。</li>
+      </ol>
+    </div>
+  </details>
+
+  <details class="help-disclosure" id="help-ios-certificate">
+    <summary>步骤 2 · 安装证书描述文件{{ disclosure_icon() }}</summary>
+    <div class="help-disclosure-body">
+      <ol class="help-list">
+        <li>使用 <b>Safari</b> 打开通用步骤 2 的证书下载页，选择 <b>iOS</b>，允许下载描述文件。</li>
+        <li>进入「设置 → 通用 → VPN 与设备管理」，找到下载的 mitmproxy 描述文件；也可从设置中的「已下载描述文件」进入。</li>
+        <li>点击「安装」，按提示输入设备密码并完成安装。</li>
+      </ol>
+      <p><b>只安装描述文件还不够</b>，继续步骤 3 开启完全信任。</p>
+    </div>
+  </details>
+
+  <details class="help-disclosure" id="help-ios-https">
+    <summary>步骤 3 · 开启证书完全信任{{ disclosure_icon() }}</summary>
+    <div class="help-disclosure-body">
+      <ol class="help-list">
+        <li>进入「设置 → 通用 → 关于本机 → 证书信任设置」。</li>
+        <li>在「针对根证书启用完全信任」下，开启 <b>mitmproxy</b> 证书开关，并确认提示。</li>
+      </ol>
+      <p>使用系统默认 HTTPS 校验的 App（例如普通 <code>URLSession</code> 请求）通常即可抓包和 Mock。iOS 没有 Android 的 <code>&lt;certificates src="user"/&gt;</code> 配置，也不需要为了 HTTPS 代理抓包关闭 ATS。</p>
+      <p>如果 App 启用了 SSL Pinning（证书绑定）或自定义证书校验，需要调整测试版本中的校验；完全信任证书不能绕过证书绑定。</p>
+    </div>
+  </details>
+</section>

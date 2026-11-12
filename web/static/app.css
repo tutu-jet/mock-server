@@ -539,7 +539,6 @@ body.drawer-resizing .drawer { animation: none; }
 .main:has(.help-layout) { background: var(--bg-2); }
 .help-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
   gap: 32px;
   padding-top: 8px;
   align-items: start;
@@ -547,12 +546,25 @@ body.drawer-resizing .drawer { animation: none; }
 .help-connection { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
 .help-toolbar { column-gap: 24px; }
 .help-toolbar a { display: inline-flex; align-items: center; }
-.help-guide, .help-reference { min-width: 0; }
-.help-reference {
+.help-guide, .help-reference, .help-platform { min-width: 0; }
+.help-common-grid, .help-platforms {
   display: grid;
-  gap: 28px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px;
+  align-items: start;
+}
+.help-common-grid > * { min-width: 0; }
+.help-platforms {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 28px 0;
+}
+.help-platform + .help-platform {
   border-left: 1px solid var(--border);
   padding-left: 28px;
+}
+.help-reference {
+  padding-bottom: 8px;
 }
 .help-section-title { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
 .help-intro { margin: 0 0 16px; color: var(--muted); line-height: 1.6; font-size: 13px; }
@@ -586,7 +598,7 @@ body.drawer-resizing .drawer { animation: none; }
 .help-address { justify-self: start; font-size: 15px; overflow-wrap: anywhere; }
 .help-address-list { padding: 0; margin: 0; list-style: none; }
 .help-address-list li { display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 0; }
-.help-guide, #help-troubleshooting { scroll-margin-top: 16px; }
+.help-guide, .help-platform, #help-troubleshooting { scroll-margin-top: 16px; }
 .help-list { margin: 0; padding-left: 20px; line-height: 1.7; }
 .help-list li { margin-bottom: 4px; }
 .help-list code, .help-faq code, p code {
@@ -879,8 +891,9 @@ body.drawer-resizing .drawer { animation: none; }
   .app-header nav { gap: 2px; margin-left: auto; }
   .nav-item { padding: 0 9px; font-size: 13px; }
   .main { padding: 0 14px 18px; }
-  .help-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-  .help-reference { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--border); }
+  .help-layout { gap: 24px; }
+  .help-common-grid, .help-platforms { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .help-platform + .help-platform { padding: 24px 0 0; border-left: 0; border-top: 1px solid var(--border); }
   .help-toolbar { gap: 8px 16px; }
   .help-toolbar .toolbar-spacer { display: none; }
   .rules-toolbar > .muted { margin-left: auto; }
