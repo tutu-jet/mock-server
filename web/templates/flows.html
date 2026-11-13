@@ -5,6 +5,10 @@
 <div id="page-toolbar" class="toolbar flows-toolbar"
      hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '流量操作失败，请重试'})"
      hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
+  <div class="page-heading">
+    <h1>实时流量</h1>
+    <p>查看代理请求，定位响应与命中规则。</p>
+  </div>
   <span class="stream-status" id="flow-stream-status" role="status" data-state="connecting">
     <span class="stream-dot" aria-hidden="true"></span>
     <span id="flow-stream-label">连接中</span>

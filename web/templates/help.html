@@ -10,19 +10,25 @@
 
 {% block toolbar %}
 <div id="page-toolbar" class="toolbar help-toolbar" aria-label="连接信息">
+  <div class="page-heading">
+    <h1>设备接入</h1>
+    <p>连接代理，开始真机调试。</p>
+  </div>
+  <div class="toolbar-spacer"></div>
   <span class="help-connection"><span class="muted">代理端口</span><b class="mono">{{ proxy_port }}</b></span>
   <span class="help-connection"><span class="muted">UI 端口</span><b class="mono">{{ ui_port }}</b></span>
   <span class="help-connection"><span class="muted">默认 IP</span><b class="mono">{{ lan_ip }}</b></span>
-  <div class="toolbar-spacer"></div>
-  <a class="btn btn-ghost" href="#help-setup">接入步骤</a>
-  <a class="btn btn-ghost" href="#help-android">Android</a>
-  <a class="btn btn-ghost" href="#help-ios">iOS</a>
-  <a class="btn btn-ghost" href="#help-troubleshooting">常见问题</a>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="help-layout">
+  <nav class="help-jump-links" aria-label="接入指南导航">
+    <a href="#help-setup">接入步骤</a>
+    <a href="#help-android">Android</a>
+    <a href="#help-ios">iOS</a>
+    <a href="#help-troubleshooting">常见问题</a>
+  </nav>
   <section class="help-guide" id="help-setup" aria-labelledby="help-setup-title">
     <h2 class="help-section-title" id="help-setup-title">通用准备 · Android / iOS</h2>
     <p class="help-intro">先完成通用准备，再按下方对应平台设置代理、安装并信任证书。</p>

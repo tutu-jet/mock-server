@@ -7,6 +7,10 @@
      hx-disabled-elt="#page-toolbar button, #rules-content button"
      hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '更新失败，请重试'})"
      hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
+  <div class="page-heading">
+    <h1>接口规则</h1>
+    <p>按页面管理响应，快速切换测试场景。</p>
+  </div>
   <div class="toolbar-spacer"></div>
   <form class="master-control" method="post" action="/rules/master" hx-post="/rules/master">
     <button class="btn btn-ghost master-toggle"
@@ -17,6 +21,7 @@
            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M12 3v9M6.3 5.7a9 9 0 1 0 11.4 0"/>
       </svg>
+      <span>Mock {{ '已开启' if master_enabled else '已关闭' }}</span>
     </button>
   </form>
   {% block rules_summary %}
@@ -44,7 +49,7 @@
         {% if g.pages is defined and g.pages %}
         <ul class="rules-nav-pages">
           {% for page in g.pages %}
-          <li><a class="rules-nav-link" href="#page-{{ g.key }}-{{ page.key }}">{{ page.label }}</a></li>
+          <li><a class="rules-nav-link" href="#page-{{ g.key }}-{{ page.key }}"><span>{{ page.label }}</span><span class="nav-count">{{ page.entities|length }}</span></a></li>
           {% endfor %}
         </ul>
         {% endif %}
@@ -125,6 +130,61 @@
     });
   }
 
+  function syncNavigationToScroll() {
+    const root = document.getElementById("rules-content");
+    const main = document.querySelector(".main");
+    if (!root || !main) return;
+
+    const mainRect = main.getBoundingClientRect();
+    const navigation = root.querySelector(".rules-nav");
+    if (!navigation) return;
+    const stackedNavigation = getComputedStyle(root.querySelector(".rules-layout")).display === "block";
+    const activationLine = mainRect.top + (stackedNavigation ? navigation.offsetHeight : 0) + 24;
+    const targets = Array.from(root.querySelectorAll(".rules-nav-link"), link => {
+      const target = document.getElementById(decodeURIComponent(link.hash.slice(1)));
+      const heading = target?.matches(".domain-group")
+        ? target.querySelector(".domain-head")
+        : target;
+      return {link, heading};
+    }).filter(item => item.heading?.getClientRects().length);
+
+    if (!targets.length) return;
+    let active = targets[0].link;
+    for (const {link, heading} of targets) {
+      if (heading.getBoundingClientRect().top > activationLine) break;
+      active = link;
+    }
+    if (main.scrollHeight > main.clientHeight &&
+        main.scrollTop + main.clientHeight >= main.scrollHeight - 1) {
+      active = targets[targets.length - 1].link;
+    }
+
+    root.querySelectorAll(".rules-nav-link").forEach(link => {
+      if (link === active) link.setAttribute("aria-current", "location");
+      else link.removeAttribute("aria-current");
+    });
+    if (stackedNavigation) {
+      const linkRect = active.getBoundingClientRect();
+      const navRect = navigation.getBoundingClientRect();
+      if (linkRect.left < navRect.left) navigation.scrollLeft += linkRect.left - navRect.left;
+      else if (linkRect.right > navRect.right) navigation.scrollLeft += linkRect.right - navRect.right;
+    }
+    if (window.location.hash && window.location.hash !== active.hash) {
+      const url = new URL(window.location.href);
+      url.hash = active.hash;
+      history.replaceState(null, "", url);
+    }
+  }
+
+  let scrollFrame = null;
+  function scheduleNavigationSync() {
+    if (scrollFrame !== null) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = null;
+      syncNavigationToScroll();
+    });
+  }
+
   function navigateToCategory(hash) {
     const root = document.getElementById("rules-content");
     if (!root || !hash) return;
@@ -137,6 +197,9 @@
     const heading = target.querySelector(".domain-head, .page-title");
     if (heading.matches(".page-title")) heading.setAttribute("tabindex", "-1");
     heading.focus({preventScroll: true});
+    const navigation = root.querySelector(".rules-nav");
+    const stackedNavigation = getComputedStyle(root.querySelector(".rules-layout")).display === "block";
+    target.style.scrollMarginTop = `${stackedNavigation ? navigation.offsetHeight + 16 : 16}px`;
     target.scrollIntoView({block: "start", behavior: "instant"});
   }
 
@@ -147,6 +210,8 @@
     if (window.location.hash !== link.hash) history.pushState(null, "", link.hash);
     navigateToCategory(link.hash);
   });
+  document.querySelector(".main")?.addEventListener("scroll", scheduleNavigationSync, {passive: true});
+  window.addEventListener("resize", scheduleNavigationSync);
   window.addEventListener("hashchange", () => {
     const root = document.getElementById("rules-content");
     if (root) updateNavigation(root);
@@ -188,6 +253,7 @@
       group.addEventListener("toggle", () => {
         const openGroups = Array.from(root.querySelectorAll(".domain-group[open]"), item => item.id);
         localStorage.setItem(storageKey, openGroups.join(","));
+        scheduleNavigationSync();
       });
       group.dataset.collapseInitialized = "true";
     });
@@ -196,7 +262,11 @@
 
   initializeRuleGroups();
   navigateToCategory(window.location.hash);
-  document.body.addEventListener("htmx:afterSettle", initializeRuleGroups);
+  scheduleNavigationSync();
+  document.body.addEventListener("htmx:afterSettle", () => {
+    initializeRuleGroups();
+    scheduleNavigationSync();
+  });
 })();
 </script>
 {% endblock %}
