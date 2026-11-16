@@ -2,6 +2,30 @@
 (() => {
   const $ = id => document.getElementById(id);
   const project = document.querySelector('.push-workspace').dataset.project;
+  const tokenKey = 'mock-server.push.token:' + project;
+  function saveToken(value) {
+    if (typeof value !== 'string') return;
+    const token = value.replace(/\s/g, '');
+    // Do not replace a saved device with a sample placeholder.
+    if (/[<>\x00-\x1f\x7f]/.test(token)) return;
+    try {
+      if (token) localStorage.setItem(tokenKey, token);
+      else localStorage.removeItem(tokenKey);
+      $('push-token-note').textContent = token
+        ? 'Token 已自动保存在此浏览器，下次打开自动填入。换设备直接修改，清空可删除保存。'
+        : '粘贴完整 Token 后自动保存在此浏览器，下次打开自动填入；空白会自动移除。';
+    } catch (error) {
+      $('push-token-note').textContent = '浏览器禁止本地保存，Token 仅供本次使用。请允许此网站存储数据。';
+    }
+  }
+  function restoreToken() {
+    try {
+      const token = localStorage.getItem(tokenKey);
+      if (token) { $('push-token').value = token; saveToken(token); }
+    } catch (error) {
+      $('push-token-note').textContent = '浏览器禁止本地保存，Token 仅供本次使用。请允许此网站存储数据。';
+    }
+  }
   const types = {
     Incident: {label: '案例', title: '案例通知测试', body: '点击查看案例详情', pointer: '案例 pointer', route: '案例详情', note: '点击通知打开案例详情。测试 noauth 时，让案例详情接口返回 403。', required: true},
     'CAC Event': {label: '云事件', title: '云事件通知测试', body: '点击查看云事件详情', pointer: '事件 ID', route: '云事件详情', note: '点击通知打开云事件详情。测试 noauth 时，让事件详情头部接口返回 403。', required: true},
@@ -93,6 +117,7 @@
     if (['title', 'body'].some(key => key in notification && typeof notification[key] !== 'string')) throw new Error('标题和正文必须是字符串');
     base = JSON.parse(JSON.stringify(value));
     $('push-token').value = message.token;
+    saveToken(message.token);
     $('push-title').value = notification.title || '';
     $('push-body').value = notification.body || '';
     $('push-type').value = types[data.source] && data.source !== 'custom' ? data.source : 'custom';
@@ -141,6 +166,11 @@
     lastType = $('push-type').value; typeUI(); preview();
   });
   $('push-token').addEventListener('blur', () => { $('push-token').value = $('push-token').value.replace(/\s/g, ''); preview(); });
+  $('push-token').addEventListener('input', () => saveToken($('push-token').value));
+  $('push-json').addEventListener('input', () => {
+    try { saveToken(JSON.parse($('push-json').value)?.message?.token); }
+    catch (error) { /* Keep the saved token while JSON is incomplete. */ }
+  });
   $('push-form').addEventListener('input', preview);
   $('push-format').addEventListener('click', () => {
     try { $('push-json').value = JSON.stringify(JSON.parse($('push-json').value), null, 2); preview(); }
@@ -233,6 +263,7 @@
     let payload;
     try { payload = readPayload(); }
     catch (error) { show('JSON 格式错误：' + error.message); return; }
+    saveToken(payload.message.token);
     await sendRequest('/push/send', {method: 'POST', body: new URLSearchParams({payload: JSON.stringify(payload)})});
   });
   async function resendEntry(id) {
@@ -251,5 +282,5 @@
     } catch (error) { show('连接失败，结果未知。请先检查手机是否收到，再决定是否重发。', 'unknown'); }
     finally { setSending(false); await refreshHistory(); }
   }
-  typeUI(); preview(); refreshHistory();
+  restoreToken(); typeUI(); preview(); refreshHistory();
 })();
