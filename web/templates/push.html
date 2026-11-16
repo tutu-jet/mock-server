@@ -2,7 +2,7 @@
 {% block title %}发通知 · mock-server{% endblock %}
 {% block toolbar %}
 <div id="page-toolbar" class="toolbar push-toolbar">
-  <div class="page-heading"><h1>通知测试</h1><p>选择通知类型，发送到测试设备，再验证点击后的页面。</p></div>
+  <div class="page-heading"><h1>通知测试</h1><p>选择发送范围和通知类型，再验证接收与点击后的页面。</p></div>
   <div class="toolbar-spacer"></div>
   <div class="push-project"><span class="push-dot"></span><span>{{ project }}</span></div>
   <span class="push-credential" title="仅表示环境变量已设置，不代表已验证权限">{{ '发送凭据已设置' if credentials_set else '使用默认 Google 凭据' }}</span>
@@ -19,7 +19,7 @@
   <section id="panel-compose" role="tabpanel" aria-labelledby="tab-compose">
     <div class="push-compose-layout">
       <div class="push-card push-editor-card">
-        <div class="push-card-head"><div><h2>新建测试通知</h2><p>一次发送到一个设备</p></div>
+        <div class="push-card-head"><div><h2>新建测试通知</h2><p>支持指定设备或 Topic 群发</p></div>
           <div class="push-mode" aria-label="编辑模式">
             <button type="button" id="mode-form" aria-pressed="true">表单</button>
             <button type="button" id="mode-json" aria-pressed="false">JSON</button>
@@ -28,10 +28,19 @@
         <form id="push-form" novalidate>
           <div id="push-fields">
             <section class="push-section">
-              <div class="push-section-title"><span>01</span><h3>目标设备</h3><button type="button" class="push-text-button" data-help="help-token">如何获取 Token？</button></div>
+              <div class="push-section-title"><span>01</span><h3>发送范围</h3><button type="button" class="push-text-button" data-help="help-target">如何选择范围？</button></div>
+              <label for="push-scope">发送到</label>
+              <select id="push-scope" class="select"><option value="token">指定设备</option><option value="topic">全局发送（Topic 订阅设备）</option></select>
+              <div id="push-device-field">
               <label for="push-token">设备 FCM Token <span class="push-required">必填</span></label>
               <textarea id="push-token" class="textarea mono" rows="2" required spellcheck="false" autocomplete="off" placeholder="粘贴手机 Logcat 中 FCM_TOKEN 的完整字符串"></textarea>
               <p id="push-token-note" class="push-field-note" aria-live="polite">粘贴完整 Token 后自动保存在此浏览器，下次打开自动填入；空白会自动移除。</p>
+              </div>
+              <div id="push-topic-field" hidden>
+                <label for="push-topic">Topic <span class="push-required">必填</span></label>
+                <input id="push-topic" class="input mono" value="all_users" maxlength="900" pattern="[a-zA-Z0-9_.~%\-]+" spellcheck="false" placeholder="all_users">
+                <p class="push-field-note">发送给当前 Firebase 项目中成功订阅此 Topic 的设备。全局发送需先让所有目标设备订阅同一 Topic；不包含未订阅设备。</p>
+              </div>
             </section>
             <section class="push-section">
               <div class="push-section-title"><span>02</span><h3>通知内容</h3></div>
@@ -86,23 +95,24 @@
 
   <section id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden>
     <div class="push-card">
-      <div class="push-card-head"><div><h2>发送历史</h2><p>自动保存最近 100 条记录，重启后仍可使用。重新发送使用原设备和完整消息；载入编辑可修改后再发。</p></div><button type="button" id="history-refresh" class="btn btn-ghost">刷新记录</button></div>
+      <div class="push-card-head"><div><h2>发送历史</h2><p>自动保存最近 100 条记录，重启后仍可使用。重新发送使用原发送范围和完整消息；载入编辑可修改后再发。</p></div><button type="button" id="history-refresh" class="btn btn-ghost">刷新记录</button></div>
       <div id="history-result" class="push-result" role="status" aria-live="polite" hidden></div>
       <div class="push-history-filters">
-        <label class="sr-only" for="history-search">搜索历史</label><input id="history-search" class="input" placeholder="搜索标题、目标 ID 或设备编号">
+        <label class="sr-only" for="history-search">搜索历史</label><input id="history-search" class="input" placeholder="搜索标题、目标 ID、设备编号或 Topic">
         <label class="sr-only" for="history-type">筛选类型</label><select id="history-type" class="select"><option value="">全部类型</option><option>Incident</option><option>CAC Event</option><option>CAC</option><option>Community</option><option value="custom">自定义</option></select>
         <label class="sr-only" for="history-status">筛选结果</label><select id="history-status" class="select"><option value="">全部结果</option><option value="accepted">FCM 已接受</option><option value="failed">发送失败</option><option value="unknown">结果未知</option></select>
       </div>
       <div id="push-history-list" class="push-history-list" aria-live="polite"></div>
-      <p class="push-history-footer">记录包含通知内容和设备 Token，保存在本机 data/push.db，仅本机可读取。</p>
+      <p class="push-history-footer">记录包含通知内容、设备 Token 或 Topic，保存在本机 data/push.db，仅本机可读取。</p>
     </div>
   </section>
 
   <section id="panel-help" role="tabpanel" aria-labelledby="tab-help" hidden>
     <div class="push-help-layout">
-      <nav class="push-help-nav" aria-label="通知帮助目录"><a href="#help-start">开始发送</a><a href="#help-token">获取设备 Token</a><a href="#help-types">通知类型</a><a href="#help-noauth">测试 noauth</a><a href="#help-network">发送成功但没收到</a><a href="#help-credentials">发送凭据</a></nav>
+      <nav class="push-help-nav" aria-label="通知帮助目录"><a href="#help-start">开始发送</a><a href="#help-target">发送范围</a><a href="#help-token">获取设备 Token</a><a href="#help-types">通知类型</a><a href="#help-noauth">测试 noauth</a><a href="#help-network">发送成功但没收到</a><a href="#help-credentials">发送凭据</a></nav>
       <div class="push-help-doc">
-        <section id="help-start" class="push-card"><span class="push-eyebrow">QUICK START</span><h2>从一条测试通知开始</h2><ol><li>安装 Google 版 App，开启手机系统通知权限。</li><li>复制设备 FCM Token，选择类型，填写标题、正文和目标 ID。</li><li>点击“发送通知”，检查 FCM 是否接受消息。</li><li>在手机通知栏点击消息，验证详情页面。发送历史可载入修改后再次发送。</li></ol><p>本页通过 FCM 发送真实推送，只发送到填写的设备。它不会向后端通知列表写入记录。</p></section>
+        <section id="help-start" class="push-card"><span class="push-eyebrow">QUICK START</span><h2>从一条测试通知开始</h2><ol><li>安装 Google 版 App，开启手机系统通知权限。</li><li>选择指定设备并填写 FCM Token，或选择全局发送并填写已订阅的 Topic；再选择类型，填写标题、正文和目标 ID。</li><li>点击“发送通知”，检查 FCM 是否接受消息。</li><li>在手机通知栏点击消息，验证详情页面。发送历史可载入修改后再次发送。</li></ol><p>本页通过 FCM 发送真实推送，发送到指定设备或 Topic 订阅设备。它不会向后端通知列表写入记录。</p></section>
+        <section id="help-target" class="push-card"><h2>指定设备与全局发送</h2><p>指定设备使用该设备的 FCM Token。全局发送使用 Topic，默认 all_users，只覆盖当前 Firebase 项目中成功订阅该 Topic 的设备，没有发送给全部 Token 的通配符。</p><p>客户端需要先调用 FirebaseMessaging.getInstance().subscribeToTopic("all_users") 并确认订阅成功；也可以由受信任服务端通过 Firebase Admin SDK 将已知设备 Token 订阅到该 Topic。填写 Topic 名称时不要加 /topics/ 前缀。未订阅的旧客户端不会收到。</p><p>表单与 JSON 可以相互切换；message 只能包含 token 或 topic 之一。发送历史会保留原发送范围，重新发送 Topic 消息仍发给该 Topic 当前的订阅设备。</p></section>
         <section id="help-token" class="push-card"><h2>获取设备 FCM Token</h2><p>Android Studio 运行 Google Debug 版 App，Logcat 搜索：</p><pre> tag:FCM_TOKEN level:DEBUG </pre><p>复制日志中的完整 Token。Fetching device FCM token 只是开始获取；等后面的字符串，不要复制时间、标签或引号。重装 App 或清除数据后，Token 可能变化。</p><p>Token 按 Firebase 项目自动保存在当前浏览器，刷新页面或重启服务后会自动填入。换设备直接修改，清空输入框可删除保存；清除浏览器网站数据后需要重新填写。请始终使用同一个地址（例如 localhost:9088），不同浏览器或地址的保存互不共享。</p></section>
         <section id="help-types" class="push-card"><h2>类型与点击行为</h2><div class="push-table-scroll"><table><thead><tr><th>类型 / source</th><th>sourceId</th><th>通知栏点击</th></tr></thead><tbody><tr><td>案例 · Incident</td><td>案例 pointer</td><td>案例详情</td></tr><tr><td>云事件 · CAC Event</td><td>事件 ID</td><td>事件详情</td></tr><tr><td>云系统 · CAC</td><td>系统编号</td><td>当前未配置详情路由</td></tr><tr><td>社区 · Community</td><td>可选</td><td>当前未配置详情路由</td></tr></tbody></table></div><p>CAC 和 Community 在应用内通知列表有点击处理，但系统通知栏使用另一套路由。自定义 source 的行为取决于 App 是否识别它。</p></section>
         <section id="help-noauth" class="push-card"><h2>测试详情页 noauth</h2><ol><li>手机连接本机代理，确认 HTTPS 请求能出现在“流量”页。</li><li>选择 Incident 或 CAC Event，填写目标 ID。</li><li>打开整体 Mock：案例把 Case → Detail → CaseListItem-Detail 切到“无权限”；事件让 MobileEventDetailHeader 返回 403。</li><li>发送通知并点击，查看详情页的无权限状态。</li></ol><p>使用匹配该详情请求的 403 Mock 时可填测试 ID；使用真实接口时，必须提供该账号无权访问且接口确认返回 403 的真实 ID。不存在的 ID 可能只返回 404 或空数据。</p><a class="push-text-button" href="/rules">打开接口规则 →</a></section>
@@ -114,5 +124,5 @@ FCM_PROJECT_ID={{ project }}</pre><p>相对路径从项目目录解析。以后�
   </section>
   <dialog id="history-dialog" class="push-history-dialog"><div class="push-card-head"><h2>发送详情</h2><button type="button" id="history-close" class="btn btn-ghost">关闭</button></div><div id="history-detail"></div></dialog>
 </div>
-<script src="/static/push.js?v={{ STATIC_VERSION }}-saved-token"></script>
+<script src="/static/push.js?v={{ STATIC_VERSION }}-push-targets"></script>
 {% endblock %}

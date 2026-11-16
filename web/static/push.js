@@ -89,6 +89,20 @@
     $('push-pointer').placeholder = type.required ? '填写目标 ID；403 Mock 可使用测试 ID' : '按需填写';
     $('push-route-note').textContent = type.note;
   }
+  function targetUI() {
+    const topic = $('push-scope').value === 'topic';
+    $('push-device-field').hidden = topic;
+    $('push-topic-field').hidden = !topic;
+    $('push-token').required = !topic;
+    $('push-topic').required = topic;
+  }
+  function targetType(message) {
+    const targets = ['token', 'topic'].filter(key => key in message);
+    if ('condition' in message || targets.length !== 1) throw new Error('发送目标必须且只能填写 token 或 topic，不支持 condition');
+    const key = targets[0];
+    if (typeof message[key] !== 'string') throw new Error(key + ' 必须是字符串');
+    return key;
+  }
   function object(value, label) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(label + ' 必须是 JSON 对象');
     return value;
@@ -98,7 +112,10 @@
     if (Object.values(extra).some(value => typeof value !== 'string')) throw new Error('附加 data 的值必须是字符串');
     const source = $('push-type').value === 'custom' ? $('push-source').value.trim() : $('push-type').value;
     const value = JSON.parse(JSON.stringify(base));
-    value.message.token = $('push-token').value.replace(/\s/g, '');
+    delete value.message.token;
+    delete value.message.topic;
+    value.message[$('push-scope').value] = $('push-scope').value === 'topic'
+      ? $('push-topic').value.trim() : $('push-token').value.replace(/\s/g, '');
     value.message.notification = {...value.message.notification, title: $('push-title').value, body: $('push-body').value};
     value.message.data = {...extra, source, sourceId: $('push-pointer').value.trim()};
     return value;
@@ -113,11 +130,13 @@
     const data = object(message.data || {}, 'data');
     if (Object.values(data).some(item => typeof item !== 'string')) throw new Error('data 的值必须是字符串');
     const notification = object(message.notification || {}, 'notification');
-    if (typeof message.token !== 'string') throw new Error('token 必须是字符串');
+    const target = targetType(message);
     if (['title', 'body'].some(key => key in notification && typeof notification[key] !== 'string')) throw new Error('标题和正文必须是字符串');
     base = JSON.parse(JSON.stringify(value));
-    $('push-token').value = message.token;
-    saveToken(message.token);
+    $('push-scope').value = target;
+    if (target === 'token') { $('push-token').value = message.token; saveToken(message.token); }
+    else $('push-topic').value = message.topic;
+    targetUI();
     $('push-title').value = notification.title || '';
     $('push-body').value = notification.body || '';
     $('push-type').value = types[data.source] && data.source !== 'custom' ? data.source : 'custom';
@@ -137,10 +156,12 @@
       $('preview-body').textContent = message.notification?.body || '通知正文';
       $('preview-source').textContent = source || '自定义';
       $('preview-route').textContent = type.route;
-      const token = message.token || '';
-      $('push-target').textContent = token ? '单设备 · …' + token.slice(-8) : '尚未填写设备 Token';
+      const target = targetType(message);
+      $('push-target').textContent = target === 'topic'
+        ? (message.topic ? '全局 · Topic: ' + message.topic + '（订阅设备）' : '尚未填写 Topic')
+        : (message.token ? '单设备 · …' + message.token.slice(-8) : '尚未填写设备 Token');
     } catch (error) {
-      $('push-target').textContent = '请检查 JSON 格式';
+      $('push-target').textContent = '请检查消息：' + error.message;
     }
   }
   function switchMode(next) {
@@ -158,6 +179,7 @@
   }
   $('mode-form').addEventListener('click', () => switchMode('form'));
   $('mode-json').addEventListener('click', () => switchMode('json'));
+  $('push-scope').addEventListener('change', () => { targetUI(); preview(); });
   $('push-type').addEventListener('change', () => {
     const old = types[lastType]; const next = types[$('push-type').value];
     if ($('push-title').value === old.title) $('push-title').value = next.title;
@@ -237,15 +259,16 @@
       mode = 'form'; $('push-fields').hidden = false; $('push-json-panel').hidden = true;
       $('mode-form').setAttribute('aria-pressed', 'true'); $('mode-json').setAttribute('aria-pressed', 'false');
       $('history-dialog').close(); showTab('compose'); preview();
-      show('已载入历史记录，请检查设备和目标 ID 后点击发送。' + (entry.project !== project ? ' 原项目为 ' + entry.project + '，本次发送将使用 ' + project + '。' : ''), 'info');
-      $('push-token').focus();
+      show('已载入历史记录，请检查发送范围和目标 ID 后点击发送。' + (entry.project !== project ? ' 原项目为 ' + entry.project + '，本次发送将使用 ' + project + '。' : ''), 'info');
+      ($('push-scope').value === 'topic' ? $('push-topic') : $('push-token')).focus();
     } catch (error) { showTab('compose'); show(error.message); }
   }
   async function showDetail(id) {
     try {
       const entry = await detail(id); const content = $('history-detail'); content.replaceChildren();
       content.append(badge(entry.status), node('p', date(entry) + ' · ' + entry.project), node('p', entry.result, 'push-detail-result'));
-      const display = JSON.parse(JSON.stringify(entry.payload)); display.message.token = '[' + entry.device + '，完整 Token 在载入编辑时恢复]';
+      const display = JSON.parse(JSON.stringify(entry.payload));
+      if ('token' in display.message) display.message.token = '[' + entry.device + '，完整 Token 在载入编辑时恢复]';
       content.append(node('pre', JSON.stringify(display, null, 2)), action('载入此记录编辑', () => loadEntry(id)), document.createTextNode(' · '), resendAction(id));
       $('history-dialog').showModal();
     } catch (error) { showTab('compose'); show(error.message); }
@@ -261,8 +284,8 @@
       for (const field of fields) if (!field.reportValidity()) return;
     }
     let payload;
-    try { payload = readPayload(); }
-    catch (error) { show('JSON 格式错误：' + error.message); return; }
+    try { payload = readPayload(); targetType(payload.message); }
+    catch (error) { show('消息格式错误：' + error.message); return; }
     saveToken(payload.message.token);
     await sendRequest('/push/send', {method: 'POST', body: new URLSearchParams({payload: JSON.stringify(payload)})});
   });
@@ -273,7 +296,7 @@
   }
   async function sendRequest(url, options) {
     if (sending) return;
-    setSending(true); show('正在发送到此设备…', 'info');
+    setSending(true); show('正在发送通知…', 'info');
     try {
       const response = await fetch(url, options);
       const data = await response.json();
@@ -282,5 +305,5 @@
     } catch (error) { show('连接失败，结果未知。请先检查手机是否收到，再决定是否重发。', 'unknown'); }
     finally { setSending(false); await refreshHistory(); }
   }
-  restoreToken(); typeUI(); preview(); refreshHistory();
+  restoreToken(); targetUI(); typeUI(); preview(); refreshHistory();
 })();

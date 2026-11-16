@@ -1,4 +1,4 @@
-"""Local persistent history for single-device FCM tests."""
+"""Local persistent history for device and topic FCM tests."""
 import hashlib
 import json
 import sqlite3
@@ -53,7 +53,8 @@ def finish(entry_id: int, status: str, result: str):
 def summary(row) -> dict:
     payload = json.loads(row["payload"])
     message = payload["message"]
-    token = message["token"]
+    topic = message.get("topic")
+    target = ("全局 · Topic: " + topic) if topic else ("设备 · " + hashlib.sha256(message["token"].encode()).hexdigest()[:8])
     return {
         "id": row["id"], "created_at": row["created_at"], "project": row["project"],
         "status": row["status"], "result": row["result"],
@@ -61,7 +62,8 @@ def summary(row) -> dict:
         "source_id": message.get("data", {}).get("sourceId", ""),
         "title": message.get("notification", {}).get("title", ""),
         "body": message.get("notification", {}).get("body", ""),
-        "device": "设备 · " + hashlib.sha256(token.encode()).hexdigest()[:8],
+        "device": target,
+        "target_type": "topic" if topic else "token",
     }
 
 

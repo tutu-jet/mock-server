@@ -18,6 +18,41 @@ def payload():
 
 
 class PushTest(unittest.TestCase):
+    def test_topic_payload_preserves_message_options(self):
+        value = payload()
+        del value["message"]["token"]
+        value["message"]["topic"] = "all_users"
+        value["message"]["android"] = {"priority": "high"}
+        self.assertEqual(push.parse_payload(json.dumps(value)), value)
+
+    def test_rejects_missing_ambiguous_and_invalid_targets(self):
+        targets = [{}, {"token": "device-token", "topic": "all_users"},
+                   {"topic": "all_users", "condition": "condition"}]
+        targets += [{"topic": topic} for topic in (None, 1, "", "a b", "/topics/all_users", "<topic>", "a" * 901, "主题")]
+        for target in targets:
+            value = payload()
+            del value["message"]["token"]
+            value["message"].update(target)
+            with self.subTest(target=target), self.assertRaises(push.PushError):
+                push.parse_payload(json.dumps(value))
+
+    def test_topic_success_and_failure_use_topic_without_token_lookup(self):
+        value = payload()
+        del value["message"]["token"]
+        value["message"]["topic"] = "all_users"
+        for code in (200, 403, 404, 500):
+            body = {"name": "topic-message-id"} if code == 200 else {"error": {"message": "secret error"}}
+            client, context = self.send_response(httpx.Response(code, json=body))
+            with self.subTest(code=code), patch.object(push, "access_token", return_value="secret"), patch("httpx.Client", return_value=context):
+                if code == 200:
+                    self.assertEqual(push.send_notification(value)["name"], "topic-message-id")
+                else:
+                    with self.assertRaises(push.PushError) as error:
+                        push.send_notification(value)
+                    self.assertNotIn("secret", str(error.exception))
+            self.assertEqual(client.post.call_args.kwargs["json"], value)
+            client.post.assert_called_once()
+
     def test_preserves_arbitrary_platform_options_and_data(self):
         value = payload()
         value["message"]["android"] = {"priority": "high"}
@@ -93,6 +128,26 @@ class PushTest(unittest.TestCase):
 
 
 class PushRouteTest(unittest.TestCase):
+    def test_topic_send_history_and_resend_preserve_target(self):
+        value = payload()
+        del value["message"]["token"]
+        value["message"]["topic"] = "all_users"
+        value["message"]["android"] = {"priority": "high"}
+        headers = {"Origin": "http://localhost:9088"}
+        with patch.object(push, "send_notification", return_value={"name": "topic-message-id", "project": push.DEFAULT_PROJECT}) as send:
+            response = self.client.post("/push/send", data={"payload": json.dumps(value)}, headers=headers)
+            self.assertEqual(response.status_code, 200)
+            entry_id = response.json()["history_id"]
+            entries = self.client.get("/push/history").json()["entries"]
+            self.assertEqual(entries[0]["target_type"], "topic")
+            self.assertIn("all_users", entries[0]["device"])
+            self.assertEqual(self.client.get(f"/push/history/{entry_id}").json()["payload"], value)
+            response = self.client.post(f"/push/history/{entry_id}/resend", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(send.call_count, 2)
+            send.assert_called_with(value)
+        self.assertEqual(len(push_history.list_entries()), 2)
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
