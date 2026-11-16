@@ -86,7 +86,8 @@
 
   <section id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden>
     <div class="push-card">
-      <div class="push-card-head"><div><h2>发送历史</h2><p>本机持久保存最近 100 条记录；载入只填回编辑器，不会自动重发。</p></div><button type="button" id="history-refresh" class="btn btn-ghost">刷新记录</button></div>
+      <div class="push-card-head"><div><h2>发送历史</h2><p>自动保存最近 100 条记录，重启后仍可使用。重新发送使用原设备和完整消息；载入编辑可修改后再发。</p></div><button type="button" id="history-refresh" class="btn btn-ghost">刷新记录</button></div>
+      <div id="history-result" class="push-result" role="status" aria-live="polite" hidden></div>
       <div class="push-history-filters">
         <label class="sr-only" for="history-search">搜索历史</label><input id="history-search" class="input" placeholder="搜索标题、目标 ID 或设备编号">
         <label class="sr-only" for="history-type">筛选类型</label><select id="history-type" class="select"><option value="">全部类型</option><option>Incident</option><option>CAC Event</option><option>CAC</option><option>Community</option><option value="custom">自定义</option></select>

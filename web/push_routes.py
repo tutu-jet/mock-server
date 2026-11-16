@@ -82,6 +82,24 @@ async def send_push(request: Request, payload: str = Form(...)):
     return {"ok": True, **result, "history_id": entry_id, "history_saved": history_saved}
 
 
+@router.post("/push/history/{entry_id}/resend")
+async def resend_push(request: Request, entry_id: int):
+    require_local_request(request)
+    try:
+        entry = await asyncio.to_thread(push_history.get_entry, entry_id)
+        project = push.project_id()
+    except (sqlite3.Error, OSError):
+        return JSONResponse({"ok": False, "error": "无法读取历史记录，本次未发送。"}, status_code=503)
+    except push.PushError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=error.status_code)
+    if entry is None:
+        raise HTTPException(404, "记录不存在或已超出保留范围。")
+    if entry["project"] != project:
+        return JSONResponse({"ok": False, "error": "历史记录的 Firebase 项目与当前配置不同，请载入编辑后确认发送。"}, status_code=409)
+    # Reuse validation and outcome recording; the original history stays unchanged.
+    return await send_push(request, payload=json.dumps(entry["payload"], ensure_ascii=False))
+
+
 async def save_outcome(entry_id, status, result) -> bool:
     if entry_id is None:
         return False

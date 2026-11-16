@@ -180,6 +180,53 @@ class PushRouteTest(unittest.TestCase):
         self.assertTrue(response.json()["ok"])
         self.assertFalse(response.json()["history_saved"])
 
+    def test_resend_preserves_full_message_and_adds_a_new_history_entry(self):
+        value = payload()
+        value["message"]["android"] = {"priority": "high"}
+        value["message"]["data"]["custom"] = "preserved"
+        original = push_history.start(value, push.DEFAULT_PROJECT)
+        push_history.finish(original, "accepted", "original-message-id")
+        before = push_history.get_entry(original)
+        with patch.object(push, "send_notification", return_value={"name": "new-message-id", "project": push.DEFAULT_PROJECT}) as send:
+            response = self.client.post(f"/push/history/{original}/resend", headers={"Origin": "http://localhost:9088"})
+        self.assertEqual(response.status_code, 200)
+        send.assert_called_once_with(value)
+        entries = push_history.list_entries()
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]["result"], "new-message-id")
+        self.assertEqual(push_history.get_entry(original), before)
+
+    def test_resend_failure_is_recorded_without_changing_original(self):
+        original = push_history.start(payload(), push.DEFAULT_PROJECT)
+        push_history.finish(original, "accepted", "original-message-id")
+        with patch.object(push, "send_notification", side_effect=push.PushError("Token expired", 502)):
+            response = self.client.post(f"/push/history/{original}/resend", headers={"Origin": "http://localhost:9088"})
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(push_history.list_entries()[0]["status"], "failed")
+        self.assertEqual(push_history.get_entry(original)["status"], "accepted")
+
+    def test_resend_rejects_unknown_record_or_different_project(self):
+        original = push_history.start(payload(), "another-project")
+        with patch.object(push, "send_notification") as send:
+            self.assertEqual(self.client.post('/push/history/9999/resend', headers={"Origin": "http://localhost:9088"}).status_code, 404)
+            self.assertEqual(self.client.post(f'/push/history/{original}/resend', headers={"Origin": "http://localhost:9088"}).status_code, 409)
+            send.assert_not_called()
+        self.assertEqual(len(push_history.list_entries()), 1)
+
+    def test_resend_rejects_nonlocal_and_cross_origin_requests(self):
+        original = push_history.start(payload(), push.DEFAULT_PROJECT)
+        client = TestClient(self.app, base_url="http://localhost:9088", client=("192.168.1.10", 1234))
+        with patch.object(push, "send_notification") as send:
+            self.assertEqual(client.post(f'/push/history/{original}/resend', headers={"Origin": "http://localhost:9088"}).status_code, 403)
+            self.assertEqual(self.client.post(f'/push/history/{original}/resend', headers={"Origin": "https://other.test"}).status_code, 403)
+            send.assert_not_called()
+
+    def test_resend_does_not_send_if_history_cannot_be_read(self):
+        with patch.object(push_history, "get_entry", side_effect=OSError("readonly")), patch.object(push, "send_notification") as send:
+            response = self.client.post('/push/history/1/resend', headers={"Origin": "http://localhost:9088"})
+            self.assertEqual(response.status_code, 503)
+            send.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

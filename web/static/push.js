@@ -1,4 +1,4 @@
-/* Form and JSON share one payload; history never resends without a submit. */
+/* Form and JSON share one payload; history resends only on an explicit click. */
 (() => {
   const $ = id => document.getElementById(id);
   const project = document.querySelector('.push-workspace').dataset.project;
@@ -15,10 +15,24 @@
   let entries = [];
   let lastType = 'Incident';
   let historyError = '';
+  let sending = false;
   function show(text, status = 'failed') {
-    $('push-result').hidden = false;
-    $('push-result').textContent = text;
-    $('push-result').dataset.status = status;
+    ['push-result', 'history-result'].forEach(id => {
+      $(id).hidden = false;
+      $(id).textContent = text;
+      $(id).dataset.status = status;
+    });
+  }
+  function resendAction(id) {
+    const button = action('重新发送', () => resendEntry(id));
+    button.dataset.resend = String(id);
+    button.disabled = sending;
+    return button;
+  }
+  function setSending(value) {
+    sending = value;
+    $('push-send').disabled = value;
+    document.querySelectorAll('[data-resend]').forEach(button => { button.disabled = value; });
   }
   function showTab(name) {
     document.querySelectorAll('[data-tab]').forEach(button => {
@@ -163,7 +177,7 @@
         [entry.source || '未指定类型', entry.source_id || '无目标 ID', entry.device, date(entry)].forEach(text => meta.append(node('span', text)));
         content.append(meta);
         const actions = node('div', undefined, 'push-history-actions');
-        actions.append(action('详情', () => showDetail(entry.id)), action('载入编辑', () => loadEntry(entry.id)));
+        actions.append(action('详情', () => showDetail(entry.id)), action('载入编辑', () => loadEntry(entry.id)), resendAction(entry.id));
         row.append(content, actions); list.append(row);
       });
     }
@@ -172,7 +186,7 @@
     else entries.slice(0, 3).forEach(entry => {
       const item = node('div', undefined, 'push-recent-item');
       const line = node('div', undefined, 'push-recent-line'); line.append(node('strong', entry.title || '无标题通知'), badge(entry.status));
-      item.append(line, node('p', (entry.source || '自定义') + ' · ' + date(entry)), action('载入编辑 →', () => loadEntry(entry.id))); recent.append(item);
+      item.append(line, node('p', (entry.source || '自定义') + ' · ' + date(entry)), action('载入编辑 →', () => loadEntry(entry.id)), document.createTextNode(' · '), resendAction(entry.id)); recent.append(item);
     });
   }
   async function refreshHistory() {
@@ -202,7 +216,7 @@
       const entry = await detail(id); const content = $('history-detail'); content.replaceChildren();
       content.append(badge(entry.status), node('p', date(entry) + ' · ' + entry.project), node('p', entry.result, 'push-detail-result'));
       const display = JSON.parse(JSON.stringify(entry.payload)); display.message.token = '[' + entry.device + '，完整 Token 在载入编辑时恢复]';
-      content.append(node('pre', JSON.stringify(display, null, 2)), action('载入此记录编辑', () => loadEntry(id)));
+      content.append(node('pre', JSON.stringify(display, null, 2)), action('载入此记录编辑', () => loadEntry(id)), document.createTextNode(' · '), resendAction(id));
       $('history-dialog').showModal();
     } catch (error) { showTab('compose'); show(error.message); }
   }
@@ -211,7 +225,7 @@
   $('history-refresh').addEventListener('click', refreshHistory);
   ['history-search', 'history-type', 'history-status'].forEach(id => $(id).addEventListener('input', renderHistory));
   $('push-form').addEventListener('submit', async event => {
-    event.preventDefault(); if ($('push-send').disabled) return;
+    event.preventDefault(); if (sending) return;
     if (mode === 'form') {
       const fields = [...$('push-fields').querySelectorAll('input,textarea')].filter(field => field.required);
       for (const field of fields) if (!field.reportValidity()) return;
@@ -219,14 +233,23 @@
     let payload;
     try { payload = readPayload(); }
     catch (error) { show('JSON 格式错误：' + error.message); return; }
-    $('push-send').disabled = true; show('正在发送到此设备…', 'info');
+    await sendRequest('/push/send', {method: 'POST', body: new URLSearchParams({payload: JSON.stringify(payload)})});
+  });
+  async function resendEntry(id) {
+    if (sending) return;
+    $('history-dialog').close();
+    await sendRequest('/push/history/' + id + '/resend', {method: 'POST'});
+  }
+  async function sendRequest(url, options) {
+    if (sending) return;
+    setSending(true); show('正在发送到此设备…', 'info');
     try {
-      const response = await fetch('/push/send', {method: 'POST', body: new URLSearchParams({payload: JSON.stringify(payload)})});
+      const response = await fetch(url, options);
       const data = await response.json();
       const warning = data.history_id && !data.history_saved ? ' 历史结果未能更新，请勿因记录状态而重复发送。' : '';
       show((data.ok ? 'FCM 已接受消息：' + data.name + '。请在手机确认是否收到。' : data.error || data.detail || '发送失败') + warning, data.ok ? 'accepted' : data.outcome || 'failed');
     } catch (error) { show('连接失败，结果未知。请先检查手机是否收到，再决定是否重发。', 'unknown'); }
-    finally { $('push-send').disabled = false; await refreshHistory(); }
-  });
+    finally { setSending(false); await refreshHistory(); }
+  }
   typeUI(); preview(); refreshHistory();
 })();
