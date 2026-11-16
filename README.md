@@ -33,16 +33,14 @@
 ## 启动
 
 ```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-python main.py
+uv sync --locked
+# 首次配置：复制 .env.example 为 .env，填写凭据文件路径
+uv run main.py
 ```
 
 打开浏览器访问 <http://localhost:9088>。
 
-三页采用统一的浅色调试工作台：顶部为主导航，下方工具栏集中显示页面说明、统计与操作。规则页以紧凑接口行展示名称、路径和四态切换，宽屏时操作位于右侧，窄屏自动移到下方；流量页采用网络请求列表，帮助页按通用准备、平台接入和常见问题组织阅读区域。
+页面采用统一的浅色调试工作台：顶部为主导航，下方工具栏集中显示页面说明、统计与操作。规则页以紧凑接口行展示名称、路径和四态切换，宽屏时操作位于右侧，窄屏自动移到下方；流量页采用网络请求列表，帮助页按通用准备、平台接入和常见问题组织阅读区域。
 
 规则页按业务域和页面展示全部接口，支持折叠业务域；左侧固定分类导航，点击业务域或页面分类会自动展开并跳转到对应位置，滚动内容时同步高亮当前分类。不提供搜索或筛选。切换接口状态时只刷新当前接口行、共享副本及启用数量，不重绘整个列表，保留滚动位置、键盘焦点和分类展开状态；整体 Mock 开关沿用局部更新，并直接显示开启 / 关闭状态。
 
@@ -79,7 +77,9 @@ Calendar 下“calendar list”归入 `/odata/calendar/TimelineEvents`、`/odata
 ```
 mock-server/
 ├── main.py             # 单进程入口，FastAPI app + mitmproxy lifespan
-├── requirements.txt
+├── pyproject.toml      # uv 依赖声明
+├── uv.lock             # 锁定依赖
+├── .env.example        # 本地配置示例
 ├── app/                # 业务层（UI 无关）
 │   ├── db.py           # rules.db / flows.db
 │   ├── models.py       # rules / flow_bodies / settings CRUD
@@ -119,3 +119,33 @@ mock-server/
 4. 使用系统默认 HTTPS 校验的 App（如普通 URLSession 请求）通常无需修改代码，也不需要为了 HTTPS 代理抓包关闭 ATS。
 
 两端若启用 SSL Pinning（证书绑定）或自定义证书校验，还需要调整测试版本中的校验。请求接口、方法和匹配条件相同时，可共用现有 Mock 规则。接入后到「流量」页验证 HTTP / HTTPS 请求，再启用规则验证 Mock；测试结束后关闭手机 Wi-Fi 代理。
+
+## 单设备测试通知
+
+顶部“发通知”页（http://localhost:9088/push）分为发送通知、发送历史和使用帮助。默认用表单选择 Incident / CAC Event / CAC / Community 或自定义 source，填写设备 Token、标题、正文、目标 ID 和附加 data；也可切换完整 JSON 编辑，保留 android / apns 等消息选项。通知预览随编辑同步。类型切换只替换仍使用默认值的标题和正文，并清空旧目标 ID，避免把案例 ID 发成事件 ID。仅支持单设备，不支持 topic / condition，不自动重试。
+
+在项目根目录 .env 中配置具有发送权限的 Google 身份（首次可复制 .env.example）：
+
+    FCM_PROJECT_ID=sap-for-me-android-internal
+    GOOGLE_APPLICATION_CREDENTIALS=./credentials/fcm-service-account.json
+
+后续直接执行 uv run main.py，或在 IDE 中运行 main.py，不需要手动 export。相对凭据路径从项目根目录解析，IDE 工作目录不同也适用。首次执行 uv sync --locked，IDE 解释器选择项目 .venv/bin/python。显式进程环境变量优先于 .env，临时覆盖后要恢复常规配置可移除对应环境变量。
+
+也可使用 Google Application Default Credentials，或通过 FCM_ACCESS_TOKEN 环境变量提供短期 OAuth 访问令牌（优先使用；过期后需要更新）。发送身份需要 cloudmessaging.messages.create 权限，例如 Firebase Cloud Messaging API Admin（roles/firebasecloudmessaging.admin）。Firebase 控制台的查看权限不能替代 API 发送权限；服务账号文件不能提交到仓库。发送请求仅允许从服务器本机、同源 localhost / 127.0.0.1 / IPv6 loopback 页面发起。FCM 请求直接连接 Google，不经过环境 HTTP 代理。
+
+测试案例 noauth：data.source 填 Incident，sourceId 填案例 pointer；启用整体 Mock，并把 Case Detail 的 CaseListItem-Detail 切换到“无权限”。手机连接本代理后点击收到的通知，详情接口返回 403。云事件使用 CAC Event 和事件 ID，需要对应事件详情头部接口返回 403。直接发通知不会写入后端通知列表；FCM 接受消息也不保证手机一定展示。
+
+已有进程需手动重启才能加载本功能；重启会按原有行为清空会话抓包，先保存需要的数据。本功能不迁移规则数据库。
+
+发送历史保存到独立的 data/push.db，保留最近 100 次通过 JSON 校验的发送尝试，按新到旧排序，服务重启后保留。历史包含完整消息和设备 Token，列表只显示设备指纹，详情默认遮盖 Token；“载入编辑”恢复原消息供修改，不自动重发。可按类型、结果及标题 / 正文 / 目标 ID / 设备编号搜索。历史接口只允许服务器本机读取，不写入代理流量库，也不存储服务账号或 OAuth 凭据。
+
+状态区分 FCM 已接受、发送失败和结果未知。FCM 已接受只表示服务端接受消息，不代表设备送达。网络超时、无法识别的成功响应或进程中断保留未知结果，不能盲目重发。开始保存历史失败时不发送；FCM 已接受但历史更新失败时仍显示接受成功，同时提示历史未更新。
+
+内置帮助覆盖获取 Token、类型与点击行为、403 noauth 测试、Google Play 服务推送连接和凭据配置。启用本版本前的发送记录未持久化，无法补入新历史；新版从首次发送开始记录。历史使用新库，不修改已有规则或抓包数据库。加载新版路由仍需手动重启，先保存需要的会话抓包。
+
+
+## uv 与 IDE 启动
+
+依赖仅在 pyproject.toml 中维护，uv.lock 提交到版本库。uv sync --locked 创建或同步 .venv；新增依赖使用 uv add 包名。测试执行 uv run python -m unittest discover -s tests。项目默认 Python 3.14，由 .python-version 指定。
+
+IDE 选择 .venv/bin/python 为解释器，运行配置指向 main.py 后直接点击 Run。不要再使用旧的 venv 解释器。main.py 在加载 Web 路由前自动读取项目 .env；静态资源与凭据路径均从项目目录解析。项目已忽略 .env、credentials/ 和 Firebase Admin SDK 私钥文件；只提交 .env.example。实际服务账号文件继续保留在原位置，不复制到配置或文档中。

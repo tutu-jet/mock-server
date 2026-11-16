@@ -5,13 +5,17 @@
 - mitmproxy 代理 (9077) — lifespan 任务，跟 UI 共一个 event loop
 
 运行：
-    python main.py
+    uv run main.py
 """
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import logging
+
+from app.config import PROJECT_ROOT, load_settings
+
+load_settings()
 
 import uvicorn
 from fastapi import FastAPI
@@ -24,6 +28,7 @@ from app.matcher import matcher
 from app.proxy_addon import MockAddon
 from app import models
 from web.routes import router
+from web.push_routes import router as push_router
 
 PROXY_HOST = "0.0.0.0"
 PROXY_PORT = 9077
@@ -94,8 +99,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan, title="mock-server")
-app.mount("/static", StaticFiles(directory="web/static"), name="static")
+app.mount("/static", StaticFiles(directory=PROJECT_ROOT / "web" / "static"), name="static")
 app.include_router(router)
+app.include_router(push_router)
 
 
 if __name__ == "__main__":

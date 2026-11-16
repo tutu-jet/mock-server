@@ -25,3 +25,11 @@ data/*.bak*
 .idea/
 .vscode/
 *.swp
+
+# Local settings and Google service-account credentials
+.env
+.env.*
+!.env.example
+credentials/
+*-firebase-adminsdk-*.json
+*service-account*.json
