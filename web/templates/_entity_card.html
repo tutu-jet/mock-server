@@ -1,7 +1,7 @@
 {#
-  entity 卡片：按 pattern + method + request_match 聚合三态规则。
+  接口行：按 pattern + method + request_match 聚合响应规则。
   e = {name, pattern, method, states:{noauth,error,nodata -> rule}, active}
-  底部 segmented 四选一：关 / 无数据 / 无权限403 / 服务错误500（单选，当前态高亮）。
+  segmented：透传 / 无数据 / 无权限 / 服务错误 / 自定义。
 #}
 {% set entity_id = e.states.values() | map(attribute='id') | min %}
 {% set card_id = 'entity-' ~ entity_id ~ '-' ~ (page.key if page is defined else 'default') %}
@@ -10,7 +10,19 @@
   {% set selected = e.states.get(e.active) or e.states.get('nodata') or (e.states.values()|first) %}
   <div class="entity-head">
     <span class="method method-{{ e.method|lower if e.method != '*' else 'any' }}">{{ e.method }}</span>
-    <span class="entity-name" title="{{ e.name }}">{{ e.name }}</span>
+    <button class="entity-name" type="button" title="{{ e.name }}" aria-label="查看 {{ e.name }} 的详情"
+            hx-get="/rules/{{ selected.id }}/detail" hx-select="unset"
+            hx-target="#drawer-root" hx-swap="innerHTML">
+      <span class="entity-name-text">{{ e.name }}</span>
+    </button>
+    <button class="icon-btn entity-copy" type="button" title="复制接口名称"
+            aria-label="复制接口名称 {{ e.name }}" data-copy-name="{{ e.name }}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="9" y="9" width="12" height="12" rx="2"/>
+        <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>
+      </svg>
+    </button>
     {% if e.active %}<span class="state-badge sb-{{ e.active }}">{{ e.states[e.active].status_code }}</span>
     {% else %}<span class="state-badge sb-off">透传</span>{% endif %}
     {% if e.request_match and e.selector_label %}
@@ -71,6 +83,21 @@
       <button id="{{ card_id }}-error" type="submit" aria-pressed="{{ 'true' if e.active == 'error' else 'false' }}"
               class="seg-btn {% if e.active == 'error' %}seg-on seg-on-error{% endif %}">服务错误</button>
     </form>
+    {% endif %}
+    {% if 'custom' in e.states %}
+    <form method="post" action="/rules/entity/state" hx-post="/rules/entity/state" class="seg-form">
+      <input type="hidden" name="pattern" value="{{ e.pattern }}">
+      <input type="hidden" name="method" value="{{ e.method }}">
+      <input type="hidden" name="request_match" value="{{ e.request_match|default('') }}">
+      <input type="hidden" name="state" value="custom">
+      <button id="{{ card_id }}-custom" type="submit" aria-pressed="{{ 'true' if e.active == 'custom' else 'false' }}"
+              class="seg-btn {% if e.active == 'custom' %}seg-on seg-on-custom{% endif %}">自定义</button>
+    </form>
+    {% else %}
+    <button id="{{ card_id }}-custom" type="button" class="seg-btn" aria-pressed="false"
+            aria-label="配置 {{ e.name }} 的自定义响应"
+            hx-get="/rules/{{ entity_id }}/custom/edit" hx-select="unset" hx-select-oob="unset"
+            hx-target="#drawer-root" hx-swap="innerHTML">自定义</button>
     {% endif %}
   </div>
 </div>

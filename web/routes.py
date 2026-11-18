@@ -21,6 +21,7 @@ import asyncio
 import json
 import socket
 import time
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Optional
@@ -31,9 +32,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response, Streamin
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app import flows, models
+from app.custom_capture import captures, CAPTURE_TIMEOUT
 from app.matcher import matcher, MASTER_SWITCH_KEY
 from app.rule_matching import REQUEST_MATCHES, rule_identity
 from app.system_rules import MIGRATION_KEY as SYSTEM_PATH_MIGRATION_KEY, scoped_default
+from web.body_viewer import reading_json
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 env = Environment(
@@ -52,11 +55,12 @@ def _pretty_json(text: str) -> Optional[str]:
         return None
     try:
         return json.dumps(json.loads(s), ensure_ascii=False, indent=2)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         return None
 
 
 env.filters["pretty_json"] = _pretty_json
+env.filters["reading_json"] = reading_json
 env.globals["MAX_BODY_BYTES"] = flows.MAX_BODY_BYTES
 env.globals["REQUEST_MATCHES"] = REQUEST_MATCHES
 
@@ -330,7 +334,7 @@ def rule_set_entity_state(
     request_match: Annotated[str, Form()] = "",
 ):
     """切换同一 pattern + method + 请求分类下的状态，跨页面共享。"""
-    if state not in ("noauth", "error", "nodata", "off"):
+    if state not in ("noauth", "error", "nodata", "custom", "off"):
         raise HTTPException(422, "未知规则状态")
     rules = models.list_rules()
     members = [r for r in rules if rule_identity(r) == (pattern, method, request_match)]
@@ -378,13 +382,112 @@ def rule_new_form():
     return render("_rule_form.html", rule=None, methods=METHODS)
 
 
+@router.get("/rules/{rule_id}/custom/edit", response_class=HTMLResponse)
+def rule_custom_form(rule_id: int):
+    return render("_rule_form.html", **_custom_form_context(rule_id))
+
+
+def _custom_form_context(rule_id: int):
+    source = models.get_rule(rule_id)
+    if not source:
+        raise HTTPException(404, "规则不存在，请刷新页面")
+    variants = [r for r in models.list_rules() if rule_identity(r) == rule_identity(source)]
+    custom = [r for r in variants if _rule_state(r) == "custom"]
+    if len(custom) > 1:
+        raise HTTPException(409, "自定义响应有重复规则，请先调整")
+    if custom:
+        return dict(
+            rule=custom[0], methods=METHODS, variants=variants,
+            rule_state=_rule_state, capture_source_id=rule_id,
+        )
+    base = next((r for r in variants if _rule_state(r) == "nodata"), source)
+    draft = replace(
+        base, id=0, name=f"[{_rule_domain(source)}] {_entity_name(source)} · 自定义",
+        status_code=200, enabled=False, state_key="custom",
+    )
+    return dict(
+        rule=draft, methods=METHODS, custom_source_id=rule_id, capture_source_id=rule_id,
+    )
+
+
+@router.post("/rules/{rule_id}/custom/capture", response_class=HTMLResponse)
+def rule_capture_start(rule_id: int):
+    source = models.get_rule(rule_id)
+    if not source:
+        raise HTTPException(404, "规则不存在，请刷新页面")
+    try:
+        capture = captures.start(source)
+    except ValueError as error:
+        return _toast_resp(str(error), "error")
+    return render("_custom_capture.html", capture=capture, timeout=CAPTURE_TIMEOUT)
+
+
+@router.get("/rules/custom/capture/{token}", response_class=HTMLResponse)
+def rule_capture_poll(token: str):
+    capture = captures.get(token)
+    if not capture:
+        return render(
+            "_custom_capture.html", capture_error="抓取任务已取消或过期，请重新打开自定义编辑",
+        )
+    if capture.state in ("waiting", "inflight"):
+        return HTMLResponse("", status_code=204)
+    captures.cancel(token)
+    source = models.get_rule(capture.source.id)
+    if not source or rule_identity(source) != rule_identity(capture.source):
+        return render(
+            "_custom_capture.html", capture_error="接口匹配条件已变更或规则已删除，请重新打开自定义编辑",
+        )
+    context = _custom_form_context(source.id)
+    if capture.state == "error":
+        context["capture_error"] = capture.error
+    else:
+        context["rule"] = replace(
+            context["rule"], status_code=capture.status_code,
+            response_headers=capture.headers, response_body=capture.body,
+        )
+        context["capture_notice"] = "已填入真实响应；保存前可修改内容，保存不会自动切换启用状态。"
+    return render("_rule_form.html", **context)
+
+
+@router.post("/rules/custom/capture/{token}/cancel", response_class=HTMLResponse)
+def rule_capture_cancel(token: str):
+    capture = captures.get(token)
+    captures.cancel(token)
+    if capture and models.get_rule(capture.source.id):
+        return rule_custom_form(capture.source.id)
+    return HTMLResponse("")
+
+
+@router.post("/rules/{rule_id}/custom", response_class=HTMLResponse)
+def rule_custom_create(
+    rule_id: int, name: str = Form(...), url_pattern: str = Form(...),
+    method: str = Form(...), request_match: str = Form(""),
+    status_code: int = Form(200), response_headers: str = Form("{}"),
+    response_body: str = Form(""),
+):
+    source = models.get_rule(rule_id)
+    if not source:
+        raise HTTPException(404, "规则不存在，请刷新页面")
+    if (url_pattern.strip(), method, request_match) != rule_identity(source):
+        return _toast_resp("自定义响应必须使用原接口的匹配条件", "error")
+    if name.strip() != f"[{_rule_domain(source)}] {_entity_name(source)} · 自定义":
+        return _toast_resp("自定义响应必须保留原接口名称", "error")
+    return _save_rule(
+        None, name, url_pattern, method, status_code, response_headers,
+        response_body, False, request_match, state_key="custom",
+    )
+
+
 @router.get("/rules/{rule_id}/edit", response_class=HTMLResponse)
 def rule_edit_form(rule_id: int):
     r = models.get_rule(rule_id)
     if not r:
         raise HTTPException(404)
     variants = [item for item in models.list_rules() if rule_identity(item) == rule_identity(r)]
-    return render("_rule_form.html", rule=r, methods=METHODS, variants=variants, rule_state=_rule_state)
+    return render(
+        "_rule_form.html", rule=r, methods=METHODS, variants=variants, rule_state=_rule_state,
+        capture_source_id=rule_id if _rule_state(r) == "custom" else None,
+    )
 
 
 @router.get("/rules/{rule_id}/detail", response_class=HTMLResponse)
@@ -815,7 +918,8 @@ def _find_same_pattern_disabled(url_pattern: str, method: str):
 
 
 def _save_rule(rule_id, name, url_pattern, method, status_code,
-               response_headers, response_body, enabled, request_match="", request=None):
+               response_headers, response_body, enabled, request_match="", request=None,
+               state_key=""):
     name = name.strip()
     url_pattern = url_pattern.strip()
     if not name or not url_pattern:
@@ -851,12 +955,18 @@ def _save_rule(rule_id, name, url_pattern, method, status_code,
             response_body=response_body, enabled=enabled, request_match=request_match,
         )
     else:
-        models.create_rule(
-            name=name, url_pattern=url_pattern, method=method,
-            status_code=status_code, response_headers=response_headers,
-            response_body=response_body, enabled=enabled, request_match=request_match,
-        )
+        try:
+            created_id = models.create_rule(
+                name=name, url_pattern=url_pattern, method=method,
+                status_code=status_code, response_headers=response_headers,
+                response_body=response_body, enabled=enabled, request_match=request_match,
+                state_key=state_key,
+            )
+        except ValueError as error:
+            return _toast_resp(str(error), "error")
     matcher.reload_from_db()
+    if state_key == "custom":
+        return _rule_changed(created_id, "自定义响应已保存，点击「自定义」启用")
     if rule_id and request is not None:
         return _rule_changed(rule_id, "规则已保存，启用状态保持不变")
     resp = HTMLResponse("")

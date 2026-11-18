@@ -1,3 +1,4 @@
+{% from '_body_viewer.html' import body_viewer %}
 <div class="drawer-overlay"
      hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '规则操作失败，请刷新后重试'})"
      hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
@@ -32,7 +33,7 @@
       <h4>Response Headers</h4>
       <pre class="mono small">{{ rule.response_headers }}</pre>
       <h4>Response Body</h4>
-      <pre class="mono small">{{ rule.response_body }}</pre>
+      {{ body_viewer(rule.response_body, 'rule-response-body') }}
       <p class="muted">默认基准为首次建立快照时保存的配置；恢复只还原本条配置，不改变启用状态或命中次数。</p>
       <div class="drawer-foot">
         <button class="btn btn-ghost" type="button"

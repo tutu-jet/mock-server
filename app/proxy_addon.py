@@ -11,6 +11,7 @@ from mitmproxy import http
 
 from app import flows, models
 from app.matcher import matcher
+from app.custom_capture import captures, MAX_CAPTURE_BYTES
 
 log = logging.getLogger("mock-server.addon")
 
@@ -42,6 +43,10 @@ class MockAddon:
 
         url = flow.request.pretty_url
         method = flow.request.method
+        capture_token = captures.claim(url, method)
+        if capture_token:
+            flow.metadata["custom_capture_token"] = capture_token
+            return
         rule = matcher.match(url, method)
         if rule is None:
             return
@@ -61,6 +66,45 @@ class MockAddon:
 
     def response(self, flow: http.HTTPFlow) -> None:
         """组装流量记录推到环形缓冲（SSE 自动广播）"""
+        capture_token = flow.metadata.get("custom_capture_token")
+        if capture_token:
+            try:
+                response = flow.response
+                if response is None:
+                    raise ValueError("接口没有返回响应")
+                content = response.get_content(strict=True) or b""
+                if len(content) > MAX_CAPTURE_BYTES:
+                    raise ValueError("响应超过 2 MiB，无法完整填入，请下载响应后手动编辑")
+                content_type = response.headers.get("content-type", "")
+                if content and content_type and not flows._TEXTUAL_RE.match(content_type.strip()):
+                    raise ValueError("响应为二进制内容，无法作为文本自定义响应")
+                body = response.get_text(strict=True) or ""
+                if len(body.encode("utf-8")) > MAX_CAPTURE_BYTES:
+                    raise ValueError("响应转换为 UTF-8 后超过 2 MiB，请手动编辑")
+                excluded = {
+                    "content-encoding", "content-length", "transfer-encoding",
+                    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+                    "te", "trailer", "upgrade",
+                }
+                excluded.update(
+                    value.strip().lower()
+                    for value in response.headers.get("connection", "").split(",")
+                )
+                headers = {
+                    key: value for key, value in response.headers.items()
+                    if key.lower() not in excluded
+                }
+                for key, value in list(headers.items()):
+                    if key.lower() == "content-type":
+                        parts = [p.strip() for p in value.split(";") if not p.strip().lower().startswith("charset=")]
+                        headers[key] = "; ".join(parts) + "; charset=utf-8"
+                captures.finish(
+                    capture_token, status_code=response.status_code,
+                    headers=json.dumps(headers, ensure_ascii=False), body=body,
+                )
+            except ValueError as error:
+                log.warning("抓取真实响应失败: %s", error)
+                captures.finish(capture_token, error=str(error))
         try:
             start = flow.metadata.get("mock_start") or time.time()
             duration_ms = int((time.time() - start) * 1000)
@@ -113,3 +157,10 @@ class MockAddon:
             flows.buffer.add(rec)
         except Exception as e:
             log.warning(f"记录流量失败: {e}")
+
+    def error(self, flow: http.HTTPFlow) -> None:
+        token = flow.metadata.get("custom_capture_token")
+        if token:
+            message = f"真实请求失败：{flow.error.msg if flow.error else '未知网络错误'}"
+            log.warning("%s", message)
+            captures.finish(token, error=message)

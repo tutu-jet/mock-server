@@ -1,3 +1,4 @@
+{% from '_body_viewer.html' import body_viewer %}
 <div class="drawer-overlay">
   <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="flow-detail-title"
        onclick="event.stopPropagation()">
@@ -49,7 +50,6 @@
 {% endfor %}</pre>
 
       {% if flow.resp_body %}
-      {% set resp_pretty = flow.resp_body | pretty_json if not flow.resp_body_truncated else None %}
       <h4>Response Body
         <span class="body-size">{{ flow.resp_body_size | human_bytes }}</span>
         {% if flow.resp_body_truncated %}<span class="trunc-tag">截断 · 仅显示前 {{ MAX_BODY_BYTES | human_bytes }}</span>{% endif %}
@@ -59,9 +59,7 @@
           <a class="body-btn" title="下载完整 body" href="/flows/{{ flow.id }}/body/resp" download>下载</a>
         </span>
       </h4>
-      <pre class="mono small{% if resp_pretty %} json{% endif %}{% if flow.resp_body_truncated %} truncated{% endif %}">{{ resp_pretty if resp_pretty else flow.resp_body }}{% if flow.resp_body_truncated %}
-
-<span class="trunc-foot">--- 已截断，原始 {{ flow.resp_body_size | human_bytes }}，剩余 {{ (flow.resp_body_size - MAX_BODY_BYTES) | human_bytes }} 未显示 ---</span>{% endif %}</pre>
+      {{ body_viewer(flow.resp_body, 'flow-response-body', flow.resp_body_truncated, flow.resp_body_size) }}
       {% endif %}
     </div>
   </div>

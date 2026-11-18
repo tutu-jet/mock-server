@@ -1,5 +1,6 @@
 import unittest
 from html.parser import HTMLParser
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.flows import FlowRecord
@@ -17,6 +18,45 @@ class Elements(HTMLParser):
 
 
 class UITest(unittest.TestCase):
+    def test_entity_title_opens_selected_details_and_icon_opens_edit(self):
+        states = {
+            "nodata": SimpleNamespace(id=7, status_code=200),
+            "noauth": SimpleNamespace(id=8, status_code=403),
+        }
+        name = "GET /backend/events/" + "long-conversation-id-" * 10
+        for active, selected in ((None, 7), ("noauth", 8)):
+            html = routes.env.get_template("_entity_card.html").render(e={
+                "name": name, "pattern": "*/events/*", "method": "GET",
+                "active": active, "request_match": "", "selector_label": "", "states": states,
+            })
+            buttons = [attrs for tag, attrs in Elements(html).items if tag == "button"]
+            title = next(attrs for attrs in buttons if attrs.get("class") == "entity-name")
+            edit = next(attrs for attrs in buttons if "entity-edit" in attrs.get("class", "").split())
+            self.assertEqual(title["hx-get"], f"/rules/{selected}/detail")
+            self.assertEqual(title["type"], "button")
+            self.assertEqual(title["title"], name)
+            self.assertEqual(title["aria-label"], f"查看 {name} 的详情")
+            self.assertEqual(title["hx-select"], "unset")
+            self.assertEqual(title["hx-target"], "#drawer-root")
+            self.assertEqual(edit["hx-get"], f"/rules/{selected}/edit")
+
+    def test_entity_copy_button_copies_only_the_displayed_name_and_escapes_it(self):
+        name = 'Endpoint "quoted" <name> & details'
+        html = routes.env.get_template("_entity_card.html").render(e={
+            "name": name, "pattern": "*/odata/mobile/Endpoint*", "method": "GET",
+            "active": None, "request_match": "", "selector_label": "",
+            "states": {"nodata": SimpleNamespace(id=7, status_code=200)},
+        })
+        copy = next(
+            attrs for tag, attrs in Elements(html).items
+            if tag == "button" and "entity-copy" in attrs.get("class", "").split()
+        )
+        self.assertEqual(copy["type"], "button")
+        self.assertEqual(copy["data-copy-name"], name)
+        self.assertEqual(copy["aria-label"], f"复制接口名称 {name}")
+        self.assertNotIn("hx-get", copy)
+        self.assertNotIn("<name>", html)
+
     def assert_single_header(self, html):
         header, content = html.split("</header>", 1)
         self.assertEqual(header.count('id="page-toolbar"'), 1)

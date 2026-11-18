@@ -107,18 +107,11 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="/static/entity-row.js?v={{ STATIC_VERSION }}"></script>
 <script>
 (() => {
   const storageKey = "mock-server.rules.open-domains";
   const stateFocus = new WeakMap();
-
-  document.body.addEventListener("click", event => {
-    const card = event.target.closest(".entity-card");
-    if (!card || event.defaultPrevented || event.button !== 0 ||
-        event.ctrlKey || event.metaKey || event.shiftKey || event.altKey ||
-        event.target.closest("button, a, input, select, textarea, label, form")) return;
-    card.querySelector(".entity-edit")?.click();
-  });
 
   function updateNavigation(root) {
     root.querySelectorAll(".rules-nav-link").forEach(link => {

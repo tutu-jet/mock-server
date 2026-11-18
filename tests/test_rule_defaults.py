@@ -99,7 +99,7 @@ class RuleDefaultsTest(unittest.TestCase):
         html = self.client.get("/rules").text
         self.assertNotIn(">查看详情</button>", html)
         self.assertEqual(html.count('title="Edit rule" aria-label="编辑 '), 2)
-        self.assertEqual(html.count('hx-select="unset"'), 2)
+        self.assertEqual(html.count('hx-select="unset"'), 6)
         self.assertLess(html.index('class="state-badge'), html.index('title="Edit rule" aria-label="编辑 '))
         self.assertNotIn("rule-actions", html)
         self.assertNotIn("rule-action-row", html)
@@ -118,6 +118,102 @@ class RuleDefaultsTest(unittest.TestCase):
             self.edit(rule_id, response_body="edited", enabled="on")
             self.restore(rule_id)
             self.assertFalse(models.get_rule(rule_id).enabled)
+
+    def create_custom(self, **changes):
+        source = models.get_rule(self.ids[200])
+        data = {field: getattr(source, field) for field in models.CONFIG_FIELDS}
+        data.update(name="[case] CaseListItem-My · 自定义", response_body='{"message":"custom"}')
+        data.update(changes)
+        return self.client.post(f"/rules/{source.id}/custom", data=data, headers=self.headers)
+
+    def test_custom_configuration_is_lazy_and_preserves_presets(self):
+        models.set_rule_enabled(self.ids[403], True)
+        before = models.list_rules()
+        html = self.client.get(f"/rules/{self.ids[200]}/custom/edit").text
+        self.assertIn("配置自定义响应", html)
+        self.assertIn(f'hx-post="/rules/{self.ids[200]}/custom"', html)
+        self.assertNotIn('type="checkbox" name="enabled"', html)
+        self.assertEqual(models.list_rules(), before)
+
+        response = self.create_custom(status_code=201)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("HX-Redirect", response.headers)
+        self.assertIn('id="rules-content" hx-swap-oob="outerHTML"', response.text)
+        custom = next(r for r in models.list_rules() if r.state_key == "custom")
+        self.assertFalse(custom.enabled)
+        self.assertEqual(custom.status_code, 201)
+        self.assertEqual(json.loads(custom.default_config)["response_body"], custom.response_body)
+        self.assertEqual([r for r in models.list_rules() if r.id != custom.id], before)
+        reopen = self.client.get(f"/rules/{self.ids[200]}/custom/edit").text
+        self.assertIn(f'hx-post="/rules/{custom.id}"', reopen)
+        self.assertEqual(self.client.get("/rules").text.count('value="custom"'), 2)
+
+    def test_custom_switching_shares_state_and_edits_keep_custom_identity(self):
+        self.create_custom()
+        custom = next(r for r in models.list_rules() if r.state_key == "custom")
+        data = dict(pattern=custom.url_pattern, method=custom.method,
+                    request_match=custom.request_match, state="custom")
+        target = f"entity-{min(self.ids.values())}-list"
+        headers = {"HX-Request": "true", "HX-Target": target}
+        models.set_rule_enabled(self.ids[403], True)
+        response = self.client.post("/rules/entity/state", data=data, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.text.count("seg-on-custom"), 2)
+        self.assertEqual(response.text.count(f'hx-get="/rules/{custom.id}/edit"'), 2)
+        self.assertIn("1/1 启用", response.text)
+        self.assertEqual([r.id for r in models.list_rules() if r.enabled], [custom.id])
+        url = "https://example.test/backend/odata/mobile/CaseListItem?%24filter=auth+eq+%27ME%27"
+        self.assertEqual(routes.matcher.match(url, "GET").response_body, '{"message":"custom"}')
+
+        for status in (403, 500, 200):
+            self.edit(custom.id, status_code=status, response_body="edited")
+            updated = models.get_rule(custom.id)
+            self.assertEqual((updated.state_key, updated.enabled), ("custom", True))
+            self.assertEqual(routes.matcher.match(url, "GET").status_code, status)
+        self.restore(custom.id)
+        self.assertEqual(models.get_rule(custom.id).state_key, "custom")
+        self.assertEqual(models.get_rule(custom.id).response_body, '{"message":"custom"}')
+        self.client.post("/rules/entity/state", data={**data, "state": "nodata"})
+        self.assertEqual([r.id for r in models.list_rules() if r.enabled], [self.ids[200]])
+        self.client.post("/rules/entity/state", data={**data, "state": "off"})
+        self.assertFalse(any(r.enabled for r in models.list_rules()))
+
+    def test_custom_creation_validation_and_duplicate_save_leave_rules_unchanged(self):
+        before = models.list_rules()
+        source = models.get_rule(self.ids[200])
+        selection = dict(pattern=source.url_pattern, method=source.method,
+                         request_match=source.request_match, state="custom")
+        self.assertEqual(
+            self.client.post("/rules/entity/state", data=selection).status_code, 409,
+        )
+        self.assertEqual(models.list_rules(), before)
+        for changes in (
+            {"response_headers": "[]"}, {"status_code": 99},
+            {"method": "POST"}, {"request_match": "case-all"},
+            {"url_pattern": "*/other"}, {"name": "different"},
+        ):
+            response = self.create_custom(**changes)
+            self.assertEqual(response.headers["HX-Reswap"], "none")
+            self.assertEqual(json.loads(response.headers["HX-Trigger"])["toast"]["kind"], "error")
+            self.assertEqual(models.list_rules(), before)
+        self.create_custom()
+        before = models.list_rules()
+        response = self.create_custom(response_body="second save")
+        self.assertIn("已有自定义", json.loads(response.headers["HX-Trigger"])["toast"]["msg"])
+        self.assertEqual(models.list_rules(), before)
+        custom = next(r for r in before if r.state_key == "custom")
+        with self.assertRaisesRegex(ValueError, "已有自定义"):
+            models.create_rule(
+                custom.name, custom.url_pattern, custom.method, 200, "{}", "",
+                enabled=False, request_match=custom.request_match, state_key="custom",
+            )
+        self.assertEqual(models.list_rules(), before)
+        models.create_rule("[case] broad", source.url_pattern, source.method, 201, "{}", "")
+        before = models.list_rules()
+        self.assertEqual(
+            self.client.post("/rules/entity/state", data=selection).status_code, 409,
+        )
+        self.assertEqual(models.list_rules(), before)
 
     def test_restore_conflicts_do_not_touch_any_rules_or_snapshots(self):
         rule_id = self.ids[200]

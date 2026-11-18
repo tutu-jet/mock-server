@@ -1,0 +1,38 @@
+{% macro reading_node(node, label=none) -%}
+  {% if node.kind in ('object', 'array') %}
+  <details class="body-node"{% if label != 'anonymized_content' %} open{% endif %}>
+    <summary>{% if label is not none %}<span class="body-key mono">{{ label }}</span> {% endif %}<span class="body-type">{{ '对象' if node.kind == 'object' else '数组' }} · {{ node.size }} 项</span></summary>
+    <div class="body-children">{% for key, child in node.children %}{{ reading_node(child, key) }}{% endfor %}</div>
+  </details>
+  {% elif node.kind == 'string' and (node.long or label in ('content', 'anonymized_content')) %}
+  <details class="body-node body-string"{% if label != 'anonymized_content' %} open{% endif %}>
+    <summary><span class="body-key mono">{{ label if label is not none else '内容' }}</span> <span class="body-type">文本 · {{ node.raw|length }} 字符{% if node.duplicate_of %} · 与 {{ node.duplicate_of }} 相同{% endif %}</span></summary>
+    <div class="body-string-content">
+      <button type="button" class="body-btn" data-copy-content="{{ node.raw|tojson|forceescape }}" onclick="copyBodyContent(this)">复制内容</button>
+      <pre class="mono small">{{ node.text }}</pre>
+    </div>
+  </details>
+  {% else %}
+  <div class="body-leaf">{% if label is not none %}<span class="body-key mono">{{ label }}</span><span class="body-colon">:</span>{% endif %}<span class="mono body-value{% if node.kind == 'scalar' %} body-scalar{% endif %}">{{ node.text if node.text != '' else '“”' }}</span></div>
+  {% endif %}
+{%- endmacro %}
+
+{% macro body_viewer(body, viewer_id, truncated=false, size=0) -%}
+{% set reader = body|reading_json if not truncated else none %}
+{% set pretty = body|pretty_json if not truncated else none %}
+<div class="body-viewer" id="{{ viewer_id }}">
+  {% if reader is not none %}
+  <div class="body-view-toolbar">
+    <div class="body-mode" role="group" aria-label="Body 展示模式">
+      <button type="button" class="body-btn" aria-pressed="true" aria-controls="{{ viewer_id }}-reading" data-body-mode="reading" onclick="setBodyMode(this)">阅读</button>
+      <button type="button" class="body-btn" aria-pressed="false" aria-controls="{{ viewer_id }}-json" data-body-mode="json" onclick="setBodyMode(this)">JSON</button>
+    </div>
+    <span class="body-type">阅读模式保留代码围栏，复制内容取字段原文</span>
+  </div>
+  <div class="body-reading" id="{{ viewer_id }}-reading" data-body-panel="reading">{{ reading_node(reader) }}</div>
+  {% endif %}
+  <pre id="{{ viewer_id }}-json" data-body-panel="json" class="mono small{% if pretty %} json{% endif %}{% if truncated %} truncated{% endif %}" {% if reader is not none %}hidden{% endif %}>{{ pretty if pretty else body }}{% if truncated %}
+
+<span class="trunc-foot">--- 已截断，原始 {{ size | human_bytes }}，剩余 {{ (size - MAX_BODY_BYTES) | human_bytes }} 未显示 ---</span>{% endif %}</pre>
+</div>
+{%- endmacro %}

@@ -29,7 +29,7 @@
   const types = {
     Incident: {label: '案例', title: '案例通知测试', body: '点击查看案例详情', pointer: '案例 pointer', route: '案例详情', note: '点击通知打开案例详情。测试 noauth 时，让案例详情接口返回 403。', required: true},
     'CAC Event': {label: '云事件', title: '云事件通知测试', body: '点击查看云事件详情', pointer: '事件 ID', route: '云事件详情', note: '点击通知打开云事件详情。测试 noauth 时，让事件详情头部接口返回 403。', required: true},
-    CAC: {label: '云系统', title: '云系统通知测试', body: '云系统可用性状态更新', pointer: '系统编号', route: '未配置详情路由', note: '当前 Android 系统推送路由不处理 CAC 的详情跳转；可测试通知展示。', required: false},
+    CAC: {label: '云系统', title: '云系统通知测试', body: '云系统可用性状态更新', pointer: '系统编号', route: '系统详情', note: '新版 Android 点击通知打开系统详情，sourceId 填写系统编号。测试 noauth 时，让系统详情头部接口返回 403。', required: true},
     Community: {label: '社区', title: '社区通知测试', body: '你有一条新的社区通知', pointer: 'sourceId（可选）', route: '未配置详情路由', note: '当前 Android 系统推送路由不处理 Community 的详情跳转；可测试通知展示。', required: false},
     custom: {label: '自定义', title: '测试通知', body: '一条自定义测试通知', pointer: 'sourceId（可选）', route: '由 App 决定', note: '填写自定义 source。未识别的类型不会打开详情。', required: false}
   };

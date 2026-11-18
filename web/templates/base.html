@@ -42,6 +42,25 @@
 <div id="confirm-root"></div>
 
 <script>
+(() => {
+  const main = document.querySelector(".main");
+  const key = `mock-server.scroll:${window.location.pathname}`;
+
+  function savePosition() {
+    sessionStorage.setItem(key, String(main.scrollTop));
+  }
+
+  document.querySelectorAll(".nav-item").forEach(link => {
+    link.addEventListener("click", savePosition);
+  });
+  window.addEventListener("pagehide", savePosition);
+  window.addEventListener("pageshow", event => {
+    if (event.persisted || window.location.hash) return;
+    const saved = sessionStorage.getItem(key);
+    if (saved !== null) main.scrollTop = Number(saved);
+  });
+})();
+
 // 全局 toast：监听 HX-Trigger 中的 toast 事件
 document.body.addEventListener("toast", e => {
   const {kind = "info", msg} = e.detail;
@@ -51,6 +70,50 @@ document.body.addEventListener("toast", e => {
   document.getElementById("toast-container").appendChild(el);
   setTimeout(() => el.classList.add("show"), 10);
   setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 300); }, 3000);
+});
+
+(() => {
+  const root = document.getElementById("drawer-root");
+  let token = null;
+  function cancelCapture(value) {
+    fetch(`/rules/custom/capture/${value}/cancel`, {method: "POST", keepalive: true})
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      })
+      .catch(error => {
+        document.body.dispatchEvent(new CustomEvent("toast", {
+          detail: {kind: "error", msg: `取消抓取失败：${error.message}，任务将自动超时`},
+        }));
+      });
+  }
+  new MutationObserver(() => {
+    const next = root.querySelector("[data-capture-token]")?.dataset.captureToken || null;
+    if (token && token !== next) cancelCapture(token);
+    token = next;
+  }).observe(root, {childList: true, subtree: true});
+  window.addEventListener("pagehide", () => {
+    if (token) navigator.sendBeacon(`/rules/custom/capture/${token}/cancel`);
+  });
+})();
+
+document.body.addEventListener("click", async event => {
+  const button = event.target.closest(".entity-copy");
+  if (!button || button.disabled) return;
+  event.preventDefault();
+  event.stopPropagation();
+  button.disabled = true;
+  try {
+    await navigator.clipboard.writeText(button.dataset.copyName);
+    document.body.dispatchEvent(new CustomEvent("toast", {
+      detail: {kind: "success", msg: "接口名称已复制"},
+    }));
+  } catch (error) {
+    document.body.dispatchEvent(new CustomEvent("toast", {
+      detail: {kind: "error", msg: `复制失败：${error.message}`},
+    }));
+  } finally {
+    button.disabled = false;
+  }
 });
 
 // 抽屉关闭：在遮罩空白处按下（且不是拖拽把手）就收起。
@@ -228,6 +291,29 @@ document.addEventListener("keydown", e => {
   // 暴露给非 HTMX 场景使用
   window.appConfirm = open;
 })();
+
+function setBodyMode(button) {
+  const viewer = button.closest('.body-viewer');
+  const mode = button.dataset.bodyMode;
+  viewer.querySelectorAll('[data-body-mode]').forEach(item => {
+    item.setAttribute('aria-pressed', String(item.dataset.bodyMode === mode));
+  });
+  viewer.querySelectorAll('[data-body-panel]').forEach(panel => {
+    panel.hidden = panel.dataset.bodyPanel !== mode;
+  });
+}
+
+async function copyBodyContent(button) {
+  button.disabled = true;
+  try {
+    await navigator.clipboard.writeText(JSON.parse(button.dataset.copyContent));
+    document.body.dispatchEvent(new CustomEvent('toast', {detail: {kind: 'success', msg: '字段内容已复制'}}));
+  } catch (error) {
+    document.body.dispatchEvent(new CustomEvent('toast', {detail: {kind: 'error', msg: `复制失败：${error.message}`}}));
+  } finally {
+    button.disabled = false;
+  }
+}
 
 // 复制流量原始 body
 async function copyFlowBody(flowId, kind, btn) {

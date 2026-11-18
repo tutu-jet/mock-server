@@ -20,7 +20,7 @@ def capture_defaults(conn, rule_id=None) -> None:
                         (rule_id,) if rule_id is not None else ()).fetchall()
     for row in rows:
         config = {key: row[key] for key in CONFIG_FIELDS}
-        state = {200: "nodata", 403: "noauth", 500: "error"}.get(row["status_code"], "other")
+        state = row["state_key"] or {200: "nodata", 403: "noauth", 500: "error"}.get(row["status_code"], "other")
         conn.execute(
             "UPDATE rules SET default_config=?,state_key=? WHERE id=? AND default_config=''",
             (json.dumps(config, ensure_ascii=False), state, row["id"]),
@@ -89,16 +89,22 @@ def create_rule(
     response_body: str,
     enabled: bool = True,
     request_match: str = "",
+    state_key: str = "",
 ) -> int:
     with connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        if state_key == "custom" and conn.execute(
+            "SELECT 1 FROM rules WHERE url_pattern=? AND method=? AND request_match=? AND state_key='custom'",
+            (url_pattern, method, request_match),
+        ).fetchone():
+            raise ValueError("该接口已有自定义响应，请刷新后编辑")
         cur = conn.execute(
             """
             INSERT INTO rules
-                (name, url_pattern, method, enabled, status_code, response_headers, response_body, request_match)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (name, url_pattern, method, enabled, status_code, response_headers, response_body, request_match, state_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (name, url_pattern, method, int(enabled), status_code, response_headers, response_body, request_match),
+            (name, url_pattern, method, int(enabled), status_code, response_headers, response_body, request_match, state_key),
         )
         capture_defaults(conn, cur.lastrowid)
         conn.execute("COMMIT")
