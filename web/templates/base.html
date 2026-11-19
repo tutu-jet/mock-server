@@ -4,40 +4,63 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{% block title %}mock-server{% endblock %}</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23c8956d'/><stop offset='1' stop-color='%23d4a574'/></linearGradient></defs><rect width='64' height='64' rx='14' fill='url(%23g)'/><text x='50%25' y='54%25' text-anchor='middle' dominant-baseline='middle' font-family='-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif' font-size='40' font-weight='700' fill='white'>M</text></svg>">
-<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%23202b3d'/><svg x='10' y='10' width='44' height='44' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16'/></svg></svg>">
+<link rel="stylesheet" href="/static/app.css?v={{ STATIC_VERSION }}">
 <script src="https://unpkg.com/htmx.org@2.0.4"></script>
 <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
 </head>
 <body>
-<aside class="sidebar">
+<!-- Light developer workspace: shared navigation and contextual tools; compact
+     endpoint rows keep response controls visible without large card grids. -->
+<header class="app-header">
   <div class="brand">
-    <div class="logo">M</div>
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16"/></svg>
+    </div>
     <div>
       <div class="brand-title">mock-server</div>
-      <div class="brand-sub">代理 9077 · UI 9088</div>
+      <div class="brand-sub">HTTP / HTTPS 代理</div>
     </div>
   </div>
-  <nav>
-    <a href="/rules" class="nav-item {% if active_tab=='rules' %}active{% endif %}">规则</a>
-    <a href="/flows" class="nav-item {% if active_tab=='flows' %}active{% endif %}">流量</a>
-    <a href="/help" class="nav-item {% if active_tab=='help' %}active{% endif %}">帮助</a>
+  <nav aria-label="主导航">
+    <a href="/rules" class="nav-item {% if active_tab=='rules' %}active{% endif %}" {% if active_tab=='rules' %}aria-current="page"{% endif %}>规则</a>
+    <a href="/flows" class="nav-item {% if active_tab=='flows' %}active{% endif %}" {% if active_tab=='flows' %}aria-current="page"{% endif %}>流量</a>
+    <a href="/push" class="nav-item {% if active_tab=='push' %}active{% endif %}" {% if active_tab=='push' %}aria-current="page"{% endif %}>发通知</a>
+    <a href="/help" class="nav-item {% if active_tab=='help' %}active{% endif %}" {% if active_tab=='help' %}aria-current="page"{% endif %}>帮助</a>
   </nav>
-</aside>
+  <span class="workspace-label">本地调试工作台</span>
+  {% block toolbar %}{% endblock %}
+</header>
 
 <main class="main">
-  <header class="page-header">
-    <h1>{% block heading %}{% endblock %}</h1>
-    <p class="subtitle">{% block subtitle %}{% endblock %}</p>
-  </header>
   {% block content %}{% endblock %}
 </main>
 
-<div id="toast-container" class="toast-container"></div>
+<div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
 <div id="drawer-root"></div>
 <div id="confirm-root"></div>
 
 <script>
+(() => {
+  const main = document.querySelector(".main");
+  const key = `mock-server.scroll:${window.location.pathname}`;
+
+  function savePosition() {
+    sessionStorage.setItem(key, String(main.scrollTop));
+  }
+
+  document.querySelectorAll(".nav-item").forEach(link => {
+    link.addEventListener("click", savePosition);
+  });
+  window.addEventListener("pagehide", savePosition);
+  window.addEventListener("pageshow", event => {
+    if (event.persisted || window.location.hash) return;
+    const saved = sessionStorage.getItem(key);
+    if (saved !== null) main.scrollTop = Number(saved);
+  });
+})();
+
 // 全局 toast：监听 HX-Trigger 中的 toast 事件
 document.body.addEventListener("toast", e => {
   const {kind = "info", msg} = e.detail;
@@ -49,8 +72,53 @@ document.body.addEventListener("toast", e => {
   setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 300); }, 3000);
 });
 
-// 抽屉关闭：点击遮罩
-document.body.addEventListener("click", e => {
+(() => {
+  const root = document.getElementById("drawer-root");
+  let token = null;
+  function cancelCapture(value) {
+    fetch(`/rules/custom/capture/${value}/cancel`, {method: "POST", keepalive: true})
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      })
+      .catch(error => {
+        document.body.dispatchEvent(new CustomEvent("toast", {
+          detail: {kind: "error", msg: `取消抓取失败：${error.message}，任务将自动超时`},
+        }));
+      });
+  }
+  new MutationObserver(() => {
+    const next = root.querySelector("[data-capture-token]")?.dataset.captureToken || null;
+    if (token && token !== next) cancelCapture(token);
+    token = next;
+  }).observe(root, {childList: true, subtree: true});
+  window.addEventListener("pagehide", () => {
+    if (token) navigator.sendBeacon(`/rules/custom/capture/${token}/cancel`);
+  });
+})();
+
+document.body.addEventListener("click", async event => {
+  const button = event.target.closest(".entity-copy");
+  if (!button || button.disabled) return;
+  event.preventDefault();
+  event.stopPropagation();
+  button.disabled = true;
+  try {
+    await navigator.clipboard.writeText(button.dataset.copyName);
+    document.body.dispatchEvent(new CustomEvent("toast", {
+      detail: {kind: "success", msg: "接口名称已复制"},
+    }));
+  } catch (error) {
+    document.body.dispatchEvent(new CustomEvent("toast", {
+      detail: {kind: "error", msg: `复制失败：${error.message}`},
+    }));
+  } finally {
+    button.disabled = false;
+  }
+});
+
+// 抽屉关闭：在遮罩空白处按下（且不是拖拽把手）就收起。
+// 用 pointerdown 起点判断，避免「从抽屉内选中文字拖到遮罩松手」被误判为点击而关闭。
+document.body.addEventListener("pointerdown", e => {
   if (e.target.classList.contains("drawer-overlay")) {
     document.getElementById("drawer-root").innerHTML = "";
   }
@@ -59,6 +127,105 @@ document.body.addEventListener("click", e => {
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") document.getElementById("drawer-root").innerHTML = "";
 });
+
+// 抽屉宽度：可左右拖拽调整，持久化到 localStorage，下次打开沿用
+(function() {
+  const KEY = "mock-server.drawer-width";
+  const MIN = 360;
+  const root = document.documentElement;
+
+  function maxWidth() { return Math.round(window.innerWidth * 0.95); }
+  function clamp(w) { return Math.max(Math.min(MIN, maxWidth()), Math.min(maxWidth(), w)); }
+
+  // 页面加载即套用上次宽度（新注入的抽屉通过 --drawer-width 变量自动生效）
+  const saved = parseInt(localStorage.getItem(KEY), 10);
+  if (saved) root.style.setProperty("--drawer-width", clamp(saved) + "px");
+
+  function attachResizer(drawer) {
+    const overlay = drawer.closest(".drawer-overlay");
+    if (!overlay || overlay.querySelector(":scope > .drawer-resizer")) return;
+    const handle = document.createElement("div");
+    handle.className = "drawer-resizer";
+    handle.title = "拖动调整宽度";
+    handle.tabIndex = 0;
+    handle.setAttribute("role", "separator");
+    handle.setAttribute("aria-label", "调整详情宽度，使用左右方向键");
+    handle.setAttribute("aria-orientation", "vertical");
+    overlay.prepend(handle);
+
+    handle.addEventListener("keydown", e => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const width = clamp(drawer.getBoundingClientRect().width + (e.key === "ArrowLeft" ? 24 : -24));
+      root.style.setProperty("--drawer-width", width + "px");
+      localStorage.setItem(KEY, String(width));
+    });
+
+    handle.addEventListener("pointerdown", e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add("active");
+      document.body.classList.add("drawer-resizing");
+
+      const move = ev => {
+        // 抽屉贴右边：宽度 = 视口右缘到指针的距离
+        const w = clamp(window.innerWidth - ev.clientX);
+        root.style.setProperty("--drawer-width", w + "px");
+      };
+      const up = () => {
+        handle.classList.remove("active");
+        document.body.classList.remove("drawer-resizing");
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        handle.removeEventListener("pointercancel", up);
+        handle.removeEventListener("lostpointercapture", up);
+        const cur = getComputedStyle(root).getPropertyValue("--drawer-width").trim();
+        const n = parseInt(cur, 10);
+        if (n) localStorage.setItem(KEY, String(n));
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+      handle.addEventListener("pointercancel", up);
+      handle.addEventListener("lostpointercapture", up);
+    });
+  }
+
+  // 抽屉由 htmx 动态注入 drawer-root，监听其变化给每个 .drawer 挂把手
+  const target = document.getElementById("drawer-root");
+  let activeDrawer = null;
+  let drawerOpener = null;
+  document.body.addEventListener("htmx:beforeRequest", e => {
+    if (e.detail.target === target && !activeDrawer) drawerOpener = document.activeElement;
+  });
+  new MutationObserver(() => {
+    const d = target.querySelector(".drawer");
+    if (d) attachResizer(d);
+    if (d && d !== activeDrawer) {
+      activeDrawer = d;
+      d.querySelector(".drawer-head button")?.focus();
+    } else if (!d && activeDrawer) {
+      activeDrawer = null;
+      if (drawerOpener?.isConnected) drawerOpener.focus();
+    }
+  }).observe(target, { childList: true, subtree: true });
+
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Tab" || !activeDrawer) return;
+    const focusable = Array.from(target.querySelectorAll(
+      'button:not(:disabled), input:not([type="hidden"]):not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]'
+    )).filter(el => el.getClientRects().length);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last?.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first?.focus();
+    }
+  });
+})();
 
 // 自定义 confirm modal：拦截 hx-confirm
 (function() {
@@ -125,6 +292,29 @@ document.addEventListener("keydown", e => {
   window.appConfirm = open;
 })();
 
+function setBodyMode(button) {
+  const viewer = button.closest('.body-viewer');
+  const mode = button.dataset.bodyMode;
+  viewer.querySelectorAll('[data-body-mode]').forEach(item => {
+    item.setAttribute('aria-pressed', String(item.dataset.bodyMode === mode));
+  });
+  viewer.querySelectorAll('[data-body-panel]').forEach(panel => {
+    panel.hidden = panel.dataset.bodyPanel !== mode;
+  });
+}
+
+async function copyBodyContent(button) {
+  button.disabled = true;
+  try {
+    await navigator.clipboard.writeText(JSON.parse(button.dataset.copyContent));
+    document.body.dispatchEvent(new CustomEvent('toast', {detail: {kind: 'success', msg: '字段内容已复制'}}));
+  } catch (error) {
+    document.body.dispatchEvent(new CustomEvent('toast', {detail: {kind: 'error', msg: `复制失败：${error.message}`}}));
+  } finally {
+    button.disabled = false;
+  }
+}
+
 // 复制流量原始 body
 async function copyFlowBody(flowId, kind, btn) {
   const origText = btn.textContent;
@@ -167,7 +357,7 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
   }
 }
 
-// URL chip popover（baseurl / query）单例
+// URL chip 与规则说明共用点击浮层，事件委托兼容局部更新。
 (function() {
   let pop = null;
   let activeChip = null;
@@ -176,6 +366,7 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
     if (pop) return pop;
     pop = document.createElement("div");
     pop.className = "url-popover";
+    pop.id = "url-rule-popover";
     pop.innerHTML = `
       <div class="url-popover-head">
         <span class="url-popover-label"></span>
@@ -203,17 +394,35 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
   function closePop() {
     if (!pop) return;
     pop.classList.remove("show");
-    if (activeChip) { activeChip.classList.remove("active"); activeChip = null; }
+    if (activeChip) {
+      activeChip.classList.remove("active");
+      if (activeChip.matches(".rule-tip")) {
+        activeChip.setAttribute("aria-expanded", "false");
+        activeChip.removeAttribute("aria-describedby");
+      }
+      activeChip = null;
+    }
   }
 
   function openPop(chip) {
+    if (activeChip && activeChip !== chip) closePop();
     const p = ensurePop();
+    const isTip = chip.matches(".rule-tip");
+    p.classList.toggle("rule-tooltip", isTip);
+    p.querySelector(".url-popover-copy").hidden = isTip;
+    if (isTip) {
+      p.setAttribute("role", "tooltip");
+      chip.setAttribute("aria-expanded", "true");
+      chip.setAttribute("aria-describedby", p.id);
+    } else {
+      p.removeAttribute("role");
+    }
     p.querySelector(".url-popover-label").textContent = chip.dataset.popoverLabel || "";
     p.querySelector(".url-popover-value").textContent = chip.dataset.popoverValue || "";
     p.classList.add("show");
     // 定位：chip 左下方，溢出右边时贴右边
     const r = chip.getBoundingClientRect();
-    p.style.top = (r.bottom + 4) + "px";
+    p.style.top = "0px";
     p.style.left = "0px";
     p.style.right = "auto";
     const pr = p.getBoundingClientRect();
@@ -223,13 +432,16 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
     }
     if (left < 12) left = 12;
     p.style.left = left + "px";
+    const top = r.bottom + 4 + pr.height > window.innerHeight - 12
+      ? Math.max(12, r.top - pr.height - 4) : r.bottom + 4;
+    p.style.top = top + "px";
     if (activeChip) activeChip.classList.remove("active");
     activeChip = chip;
     chip.classList.add("active");
   }
 
   document.addEventListener("click", e => {
-    const chip = e.target.closest(".flow-chip");
+    const chip = e.target.closest(".flow-chip, .rule-tip");
     if (chip) {
       e.preventDefault();
       e.stopPropagation();
@@ -243,8 +455,15 @@ async function copyFlowBodyToTextarea(flowId, kind, btn) {
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") closePop();
   });
-  window.addEventListener("scroll", closePop, true);
+  window.addEventListener("scroll", () => {
+    if (activeChip && activeChip.matches(".rule-tip") && document.activeElement === activeChip) {
+      openPop(activeChip);
+    } else {
+      closePop();
+    }
+  }, true);
   window.addEventListener("resize", closePop);
+  document.body.addEventListener("htmx:beforeSwap", closePop);
 })();
 </script>
 {% block scripts %}{% endblock %}

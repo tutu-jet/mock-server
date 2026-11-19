@@ -1,8 +1,11 @@
+{% from '_body_viewer.html' import body_viewer %}
 <div class="drawer-overlay">
-  <div class="drawer" onclick="event.stopPropagation()">
+  <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="flow-detail-title"
+       onclick="event.stopPropagation()">
     <div class="drawer-head">
-      <h3>流量详情 #{{ flow.id }}</h3>
-      <button class="icon-btn" onclick="document.getElementById('drawer-root').innerHTML=''" title="关闭">
+      <h3 id="flow-detail-title">流量详情 #{{ flow.id }}</h3>
+      <button class="icon-btn" type="button" aria-label="关闭详情"
+              onclick="document.getElementById('drawer-root').innerHTML=''" title="Close">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -27,6 +30,7 @@
 {% endfor %}</pre>
 
       {% if flow.req_body %}
+      {% set req_pretty = flow.req_body | pretty_json if not flow.req_body_truncated else None %}
       <h4>Request Body
         <span class="body-size">{{ flow.req_body_size | human_bytes }}</span>
         {% if flow.req_body_truncated %}<span class="trunc-tag">截断 · 仅显示前 {{ MAX_BODY_BYTES | human_bytes }}</span>{% endif %}
@@ -36,7 +40,7 @@
           <a class="body-btn" title="下载完整 body" href="/flows/{{ flow.id }}/body/req" download>下载</a>
         </span>
       </h4>
-      <pre class="mono small{% if flow.req_body_truncated %} truncated{% endif %}">{{ flow.req_body }}{% if flow.req_body_truncated %}
+      <pre class="mono small{% if req_pretty %} json{% endif %}{% if flow.req_body_truncated %} truncated{% endif %}">{{ req_pretty if req_pretty else flow.req_body }}{% if flow.req_body_truncated %}
 
 <span class="trunc-foot">--- 已截断，原始 {{ flow.req_body_size | human_bytes }}，剩余 {{ (flow.req_body_size - MAX_BODY_BYTES) | human_bytes }} 未显示 ---</span>{% endif %}</pre>
       {% endif %}
@@ -55,9 +59,7 @@
           <a class="body-btn" title="下载完整 body" href="/flows/{{ flow.id }}/body/resp" download>下载</a>
         </span>
       </h4>
-      <pre class="mono small{% if flow.resp_body_truncated %} truncated{% endif %}">{{ flow.resp_body }}{% if flow.resp_body_truncated %}
-
-<span class="trunc-foot">--- 已截断，原始 {{ flow.resp_body_size | human_bytes }}，剩余 {{ (flow.resp_body_size - MAX_BODY_BYTES) | human_bytes }} 未显示 ---</span>{% endif %}</pre>
+      {{ body_viewer(flow.resp_body, 'flow-response-body', flow.resp_body_truncated, flow.resp_body_size) }}
       {% endif %}
     </div>
   </div>

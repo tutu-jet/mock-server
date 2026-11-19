@@ -1,15 +1,42 @@
 <div class="drawer-overlay">
-  <div class="drawer" onclick="event.stopPropagation()">
+  <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="rule-form-title"
+       onclick="event.stopPropagation()">
     <div class="drawer-head">
-      <h3>{% if rule and rule.id %}编辑规则 #{{ rule.id }}{% elif from_flow %}从流量 #{{ from_flow.id }} 保存为规则{% else %}新建规则{% endif %}</h3>
-      <button class="icon-btn" onclick="document.getElementById('drawer-root').innerHTML=''" title="关闭">
+      <h3 id="rule-form-title">{% if custom_source_id %}配置自定义响应{% elif rule and rule.id %}编辑规则 #{{ rule.id }}{% elif from_flow %}从流量 #{{ from_flow.id }} 保存为规则{% else %}新建规则{% endif %}</h3>
+      <button class="icon-btn" type="button" aria-label="关闭编辑"
+              onclick="document.getElementById('drawer-root').innerHTML=''" title="Close">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <form class="drawer-body"
-          hx-post="{% if rule and rule.id %}/rules/{{ rule.id }}{% else %}/rules{% endif %}"
+          hx-post="{% if custom_source_id %}/rules/{{ custom_source_id }}/custom{% elif rule and rule.id %}/rules/{{ rule.id }}{% else %}/rules{% endif %}"
           hx-target="#drawer-root"
-          hx-swap="innerHTML">
+          hx-swap="innerHTML"
+          hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '规则保存失败，请检查输入后重试'})"
+          hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
+      {% if capture_source_id %}
+      <div class="banner banner-info">
+        <p>可手动编辑下方内容，或在 App 中触发一次接口，抓取真实响应作为修改起点。</p>
+        <button class="btn btn-ghost" type="button"
+                hx-post="/rules/{{ capture_source_id }}/custom/capture"
+                hx-target="#drawer-root" hx-swap="innerHTML" hx-disabled-elt="this"
+                hx-confirm="开始抓取会离开当前表单，未保存的修改将丢弃。已保存内容不会被覆盖，抓取后需手动保存。"
+                data-confirm-title="抓取真实响应" data-confirm-ok="开始抓取">抓取真实响应</button>
+      </div>
+      {% endif %}
+      {% if capture_notice %}<div class="banner banner-info" role="status">{{ capture_notice }}</div>{% endif %}
+      {% if capture_error %}<div class="banner banner-warn" role="alert">{{ capture_error }}。未覆盖已保存配置，可重新抓取或手动编辑。</div>{% endif %}
+      {% if rule and rule.id and variants %}
+      <div class="chips" aria-label="选择编辑的规则状态">
+        {% for variant in variants %}
+        <button class="btn btn-sm {% if variant.id == rule.id %}btn-primary{% else %}btn-ghost{% endif %}"
+                type="button" aria-pressed="{{ 'true' if variant.id == rule.id else 'false' }}"
+                hx-get="/rules/{{ variant.id }}/edit" hx-target="#drawer-root" hx-swap="innerHTML">
+          {{ {'nodata': '无数据', 'noauth': '无权限', 'error': '服务错误', 'custom': '自定义'}.get(rule_state(variant), '自定义') }} · {{ variant.status_code }}
+        </button>
+        {% endfor %}
+      </div>
+      {% endif %}
       {% if from_flow and existing_rule %}
       <div class="banner banner-warn">
         <div>⚠️ 该请求已命中规则 #{{ existing_rule.id }}「{{ existing_rule.name }}」</div>
@@ -20,7 +47,7 @@
       <div class="banner banner-info">
         <div>ℹ️ 已有同 URL 规则 #{{ existing_disabled.id }}「{{ existing_disabled.name }}」（当前已禁用）</div>
         <div class="banner-url mono" title="{{ existing_disabled.url_pattern }}">{{ existing_disabled.method }} {{ existing_disabled.url_pattern }}</div>
-        <div>点「覆盖」会更新它并启用，或「另存为新规则」新建一条。</div>
+        <div>点「覆盖」只更新配置，保留禁用状态；或「另存为新规则」新建一条。</div>
       </div>
       {% elif from_flow and existing_wildcard %}
       <div class="banner banner-info">
@@ -46,18 +73,28 @@
       {% endif %}
       <label class="field">
         <span>名称</span>
-        <input class="input" name="name" required value="{{ rule.name if rule else '' }}">
+        <input class="input" name="name" required value="{{ rule.name if rule else '' }}" {% if custom_source_id %}readonly{% endif %}>
       </label>
       <label class="field">
         <span>URL Pattern <em class="hint">支持 * 通配</em></span>
         <input class="input mono" name="url_pattern" required
                placeholder="例如 https://api.example.com/user/*"
-               value="{{ rule.url_pattern if rule else '' }}">
+               value="{{ rule.url_pattern if rule else '' }}" {% if custom_source_id %}readonly{% endif %}>
+      </label>
+      <label class="field">
+        <span>请求分类 <em class="hint">按解码后的查询条件或集合 / 详情路径匹配</em></span>
+        {% if custom_source_id %}<input type="hidden" name="request_match" value="{{ rule.request_match }}">{% endif %}
+        <select class="select" name="request_match" {% if custom_source_id %}disabled{% endif %}>
+          {% for key, label in (REQUEST_MATCHES|default({'': '完整 URL 通配'})).items() %}
+          <option value="{{ key }}" {% if rule and rule.request_match == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
       </label>
       <div class="row">
         <label class="field" style="flex:1">
           <span>方法</span>
-          <select class="select" name="method">
+          {% if custom_source_id %}<input type="hidden" name="method" value="{{ rule.method }}">{% endif %}
+          <select class="select" name="method" {% if custom_source_id %}disabled{% endif %}>
             {% for m in methods %}
             <option value="{{ m }}" {% if rule and rule.method == m %}selected{% elif not rule and m == '*' %}selected{% endif %}>{{ m }}</option>
             {% endfor %}
@@ -81,11 +118,26 @@
         <span>Response Body</span>
         <textarea class="textarea mono" id="rule-form-body" name="response_body" rows="10" placeholder="JSON 字符串或纯文本">{{ rule.response_body if rule else '' }}</textarea>
       </label>
+      {% if custom_source_id %}
+      <p class="muted">以现有响应为起点配置自定义内容。保存不会启用规则；返回接口列表后点击「自定义」启用，直接返回配置内容，不请求真实服务器。</p>
+      {% elif rule and rule.id %}
+      <p class="muted">编辑仅修改配置，启用状态和命中次数保持不变。返回码修改不会改变原状态入口。</p>
+      {% else %}
       <label class="switch-inline">
         <input type="checkbox" name="enabled" {% if not rule or rule.enabled %}checked{% endif %}>
         <span>启用</span>
       </label>
+      {% endif %}
       <div class="drawer-foot">
+        {% if rule and rule.id %}
+        <button class="btn btn-ghost" type="button"
+                hx-get="/rules/{{ rule.id }}/detail" hx-target="#drawer-root" hx-swap="innerHTML">查看详情</button>
+        <button class="btn btn-ghost" type="button"
+                hx-post="/rules/{{ rule.id }}/restore" hx-target="#drawer-root" hx-swap="innerHTML"
+                hx-confirm="恢复此规则最初保存的默认配置？当前启用状态和命中次数保持不变。"
+                data-confirm-title="Restore default configuration" data-confirm-ok="恢复默认"
+                {% if not rule.default_config %}disabled{% endif %}>恢复默认</button>
+        {% endif %}
         <button class="btn btn-ghost" type="button"
                 onclick="document.getElementById('drawer-root').innerHTML=''">取消</button>
         {% if from_flow and existing_rule %}

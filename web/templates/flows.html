@@ -1,10 +1,18 @@
 {% extends "base.html" %}
 {% block title %}流量 · mock-server{% endblock %}
-{% block heading %}流量{% endblock %}
-{% block subtitle %}经过代理的所有请求（最近 1000 条，倒序）{% endblock %}
 
-{% block content %}
-<div class="toolbar">
+{% block toolbar %}
+<div id="page-toolbar" class="toolbar flows-toolbar"
+     hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '流量操作失败，请重试'})"
+     hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
+  <div class="page-heading">
+    <h1>实时流量</h1>
+    <p>查看代理请求，定位响应与命中规则。</p>
+  </div>
+  <span class="stream-status" id="flow-stream-status" role="status" data-state="connecting">
+    <span class="stream-dot" aria-hidden="true"></span>
+    <span id="flow-stream-label">连接中</span>
+  </span>
   <div class="muted">
     共 <span id="flows-total">{{ total }}</span> 条 · 命中 <span id="flows-hit">{{ hit_count }}</span>
     {% if filtered_out > 0 %}
@@ -12,33 +20,59 @@
     {% endif %}
   </div>
   <div class="toolbar-spacer"></div>
-  <form class="toolbar-form"
+  <button class="btn btn-ghost category-filter-trigger" type="button"
+          popovertarget="host-filter-popover" aria-haspopup="dialog">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 5h16l-6.5 7.5v5L10.5 20v-7.5L4 5Z"/>
+    </svg>
+    <span>忽略 Host</span>
+  </button>
+  <div id="host-filter-popover" class="category-filter-popover" popover role="dialog"
+       aria-labelledby="blocked-host-label">
+  <form class="toolbar-form flows-host-form"
         hx-post="/flows/blocked-hosts"
-        hx-swap="none">
-    <input name="value" class="input" style="width: 320px;"
+        hx-swap="none" hx-disabled-elt="find button">
+    <label id="blocked-host-label" for="blocked-hosts">忽略 Host</label>
+    <p class="muted" id="blocked-hosts-help">匹配这些域名的请求不显示。多个域名用逗号分隔，支持 *.example.com。保存后对所有客户端生效。</p>
+    <input id="blocked-hosts" name="value" class="input"
            value="{{ blocked_hosts_raw }}"
-           placeholder="host 黑名单（逗号分隔，支持 *.example.com）"
-           title="保存到服务端，所有客户端共享。回车应用。" />
-    <button class="btn btn-ghost" type="submit">应用</button>
+           placeholder="逗号分隔，支持 *.example.com"
+           aria-describedby="blocked-hosts-help" />
+    <div class="category-filter-actions">
+    <button class="btn btn-ghost" type="button" popovertarget="host-filter-popover"
+            popovertargetaction="hide">取消</button>
     <button class="btn btn-ghost" type="button"
             hx-post="/flows/blocked-hosts"
             hx-vals='{"value": {{ default_blocked_hosts|tojson }} }'
             hx-swap="none"
             title="恢复默认（系统心跳 host）">默认</button>
+    <button class="btn btn-primary" type="submit">应用</button>
+    </div>
   </form>
-  <button class="btn btn-ghost"
+  </div>
+  <button class="btn btn-ghost btn-danger-ghost" type="button"
           hx-delete="/flows"
           hx-confirm="清空所有流量？"
           data-confirm-kind="danger"
           data-confirm-title="清空流量"
           data-confirm-ok="清空"
           hx-target="#flows-list"
-          hx-swap="innerHTML"
-          onclick="setTimeout(()=>{document.getElementById('flows-total').textContent='0';document.getElementById('flows-hit').textContent='0';},100)">
-    清空
+          hx-swap="innerHTML" hx-disabled-elt="this">
+    <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 6h18M9 6V3h6v3M5 6l1 14h12l1-14M10 10v6M14 10v6"/>
+    </svg>
+    清空流量
   </button>
 </div>
+{% endblock %}
 
+{% block content %}
+<div class="flow-page">
+<div class="flow-columns" aria-hidden="true">
+  <span>时间</span><span>方法</span><span>状态</span><span>请求地址</span><span>耗时</span><span>规则 / 操作</span>
+</div>
 <div id="flows-list"
      class="flows-list"
      hx-ext="sse"
@@ -49,4 +83,38 @@
     {% include "_flow_row.html" %}
   {% endfor %}
 </div>
+<div class="empty-state flows-empty">
+  <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3 12h4l3-7 4 14 3-7h4"/>
+  </svg>
+  <strong>等待请求经过代理</strong>
+  <p>在设备上发起请求，流量会自动出现在这里。</p>
+  <a class="btn btn-ghost" href="/help">查看设备接入步骤</a>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const list = document.getElementById("flows-list");
+  const status = document.getElementById("flow-stream-status");
+  const label = document.getElementById("flow-stream-label");
+
+  list.addEventListener("htmx:sseOpen", () => {
+    status.dataset.state = "connected";
+    label.textContent = "实时接收";
+  });
+  list.addEventListener("htmx:sseError", () => {
+    status.dataset.state = "reconnecting";
+    label.textContent = "连接中断，正在重连";
+  });
+
+  new MutationObserver(() => {
+    document.getElementById("flows-total").textContent = list.querySelectorAll(".flow-row").length;
+    document.getElementById("flows-hit").textContent = list.querySelectorAll(".flow-row.hit").length;
+  }).observe(list, {childList: true});
+})();
+</script>
 {% endblock %}

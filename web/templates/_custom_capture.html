@@ -1,0 +1,33 @@
+<div class="drawer-overlay">
+  <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="capture-title">
+    <div class="drawer-head">
+      <h3 id="capture-title">抓取真实响应</h3>
+      <button class="icon-btn" type="button" aria-label="关闭抓取"
+              onclick="document.getElementById('drawer-root').innerHTML=''">×</button>
+    </div>
+    {% if capture_error %}
+    <div class="drawer-body"><div class="banner banner-warn" role="alert">{{ capture_error }}</div></div>
+    {% else %}
+    <div class="drawer-body" data-capture-token="{{ capture.token }}"
+         hx-get="/rules/custom/capture/{{ capture.token }}" hx-trigger="every 1s"
+         hx-target="#drawer-root" hx-select="unset" hx-select-oob="unset" hx-swap="innerHTML"
+         hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '抓取状态读取失败，请取消后重试'})"
+         hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请取消后重试'})">
+      <div class="banner banner-info" role="status">
+        请在 App 中操作一次，触发下方接口；正在等待匹配请求及真实服务器响应。
+      </div>
+      <div class="detail-url mono">{{ capture.source.method }} {{ capture.source.url_pattern }}</div>
+      {% if capture.source.request_match %}
+      <p class="muted">{{ REQUEST_MATCHES.get(capture.source.request_match, capture.source.request_match) }}</p>
+      {% endif %}
+      <p>只抓取开始后下一次匹配请求。该次请求绕过 Mock，其他请求及规则开关保持不变。</p>
+      <p class="muted">{{ timeout }} 秒内未收到完整响应会自动结束。仅支持完整文本响应，最多 2 MiB；不会把截断内容或二进制数据填入表单。</p>
+      <div class="drawer-foot">
+        <button class="btn btn-ghost" type="button"
+                hx-post="/rules/custom/capture/{{ capture.token }}/cancel"
+                hx-target="#drawer-root" hx-swap="innerHTML">取消抓取，返回编辑</button>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>

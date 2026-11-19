@@ -1,43 +1,265 @@
 {% extends "base.html" %}
-{% block title %}规则 · mock-server{% endblock %}
-{% block heading %}规则{% endblock %}
-{% block subtitle %}匹配命中的请求会被改写返回{% endblock %}
+{% block title %}Rules · mock-server{% endblock %}
+{% block toolbar %}
+<div id="page-toolbar" class="toolbar rules-toolbar"
+     hx-target="#rules-content" hx-select="#rules-content"
+     hx-select-oob="#page-toolbar:outerHTML" hx-swap="outerHTML show:none"
+     hx-disabled-elt="#page-toolbar button, #rules-content button"
+     hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '更新失败，请重试'})"
+     hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
+  <div class="page-heading">
+    <h1>接口规则</h1>
+    <p>按页面管理响应，快速切换测试场景。</p>
+  </div>
+  <div class="toolbar-spacer"></div>
+  <form class="master-control" method="post" action="/rules/master" hx-post="/rules/master">
+    <button class="btn btn-ghost master-toggle"
+            type="submit" aria-pressed="{{ 'true' if master_enabled else 'false' }}"
+            aria-label="{% if master_enabled %}关闭整体 Mock{% else %}开启整体 Mock{% endif %}"
+            title="{% if master_enabled %}Mock is on — click to disable{% else %}Mock is off — click to enable{% endif %}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v9M6.3 5.7a9 9 0 1 0 11.4 0"/>
+      </svg>
+      <span>Mock {{ '已开启' if master_enabled else '已关闭' }}</span>
+    </button>
+  </form>
+  {% block rules_summary %}
+  <div id="rules-summary" class="muted">{{ total }} 个接口 · 启用 {{ enabled_count }}</div>
+  {% endblock %}
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="toolbar">
-  <form method="get" action="/rules" class="toolbar-form">
-    <input class="input" type="text" name="q" placeholder="搜索名称或 URL pattern..." value="{{ q }}">
-    <select class="select" name="method">
-      {% for m in methods %}
-      <option value="{{ m }}" {% if m == method_filter %}selected{% endif %}>{{ m }}</option>
+<div id="rules-content"
+     hx-target="this"
+     hx-select="#rules-content" hx-select-oob="#page-toolbar:outerHTML"
+     hx-swap="outerHTML show:none"
+     hx-disabled-elt="#rules-content button"
+     hx-on::response-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '更新失败，请重试'})"
+     hx-on::send-error="htmx.trigger(this, 'toast', {kind: 'error', msg: '网络连接失败，请重试'})">
+{% if groups %}
+<div class="rules-layout">
+  <nav class="rules-nav" aria-label="规则分类导航">
+    <h2 class="rules-nav-title">分类导航</h2>
+    <ul class="rules-nav-list">
+      {% for g in groups %}
+      <li>
+        <a class="rules-nav-link rules-nav-domain" href="#domain-{{ g.key }}">{{ g.label }}</a>
+        {% if g.pages is defined and g.pages %}
+        <ul class="rules-nav-pages">
+          {% for page in g.pages %}
+          <li><a class="rules-nav-link" href="#page-{{ g.key }}-{{ page.key }}"><span>{{ page.label }}</span><span class="nav-count">{{ page.entities|length }}</span></a></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </li>
       {% endfor %}
-    </select>
-    <label class="switch-inline">
-      <input type="checkbox" name="enabled_only" {% if enabled_only %}checked{% endif %}>
-      <span>仅显示启用</span>
-    </label>
-    <button class="btn btn-ghost" type="submit">筛选</button>
-  </form>
-  <div class="toolbar-spacer"></div>
-  <div class="muted">共 {{ total }} 条 · 启用 {{ enabled_count }}</div>
-  <button class="btn btn-primary"
-          hx-get="/rules/new"
-          hx-target="#drawer-root"
-          hx-swap="innerHTML">+ 新建规则</button>
-</div>
-
-{% if rules %}
-<div class="grid">
-  {% for rule in rules %}
-    {% include "_rule_card.html" %}
+    </ul>
+  </nav>
+<div class="domain-list">
+  {% for g in groups %}
+  <details class="domain-group" id="domain-{{ g.key }}">
+    <summary class="domain-head">
+      <h3 class="domain-title">{{ g.label }}</h3>
+      {% block domain_count scoped %}
+      <span id="domain-count-{{ g.key }}" class="domain-count {% if g.enabled_count %}has-active{% endif %}">
+        {{ g.enabled_count }}/{{ g.total }} 启用
+      </span>
+      {% endblock %}
+      <span class="domain-chevron" aria-hidden="true"></span>
+    </summary>
+    <div class="domain-content">
+    {% if g.pages is defined %}
+      {% for page in g.pages %}
+      <section class="page-group" id="page-{{ g.key }}-{{ page.key }}"
+               aria-labelledby="page-title-{{ g.key }}-{{ page.key }}">
+        <h4 class="page-title" id="page-title-{{ g.key }}-{{ page.key }}">{{ page.label }}</h4>
+        <div class="entity-grid">
+          {% for e in page.entities %}
+            {% include "_entity_card.html" %}
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+    {% else %}
+      <div class="entity-grid">
+        {% for e in g.entities %}
+          {% include "_entity_card.html" %}
+        {% endfor %}
+      </div>
+    {% endif %}
+    </div>
+  </details>
   {% endfor %}
+</div>
 </div>
 {% else %}
 <div class="empty-state">
-  <div class="empty-icon">∅</div>
-  <div>还没有规则</div>
-  <button class="btn btn-primary" style="margin-top:12px"
-          hx-get="/rules/new" hx-target="#drawer-root">+ 新建规则</button>
+  <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+    <circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>
+  </svg>
+  <strong>暂无接口规则</strong>
+  <p>保存流量为规则后，接口会显示在这里。</p>
 </div>
 {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/entity-row.js?v={{ STATIC_VERSION }}"></script>
+<script>
+(() => {
+  const storageKey = "mock-server.rules.open-domains";
+  const stateFocus = new WeakMap();
+
+  function updateNavigation(root) {
+    root.querySelectorAll(".rules-nav-link").forEach(link => {
+      if (link.hash === window.location.hash) {
+        link.setAttribute("aria-current", "location");
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
+  }
+
+  function syncNavigationToScroll() {
+    const root = document.getElementById("rules-content");
+    const main = document.querySelector(".main");
+    if (!root || !main) return;
+
+    const mainRect = main.getBoundingClientRect();
+    const navigation = root.querySelector(".rules-nav");
+    if (!navigation) return;
+    const stackedNavigation = getComputedStyle(root.querySelector(".rules-layout")).display === "block";
+    const activationLine = mainRect.top + (stackedNavigation ? navigation.offsetHeight : 0) + 24;
+    const targets = Array.from(root.querySelectorAll(".rules-nav-link"), link => {
+      const target = document.getElementById(decodeURIComponent(link.hash.slice(1)));
+      const heading = target?.matches(".domain-group")
+        ? target.querySelector(".domain-head")
+        : target;
+      return {link, heading};
+    }).filter(item => item.heading?.getClientRects().length);
+
+    if (!targets.length) return;
+    let active = targets[0].link;
+    for (const {link, heading} of targets) {
+      if (heading.getBoundingClientRect().top > activationLine) break;
+      active = link;
+    }
+    if (main.scrollHeight > main.clientHeight &&
+        main.scrollTop + main.clientHeight >= main.scrollHeight - 1) {
+      active = targets[targets.length - 1].link;
+    }
+
+    root.querySelectorAll(".rules-nav-link").forEach(link => {
+      if (link === active) link.setAttribute("aria-current", "location");
+      else link.removeAttribute("aria-current");
+    });
+    if (stackedNavigation) {
+      const linkRect = active.getBoundingClientRect();
+      const navRect = navigation.getBoundingClientRect();
+      if (linkRect.left < navRect.left) navigation.scrollLeft += linkRect.left - navRect.left;
+      else if (linkRect.right > navRect.right) navigation.scrollLeft += linkRect.right - navRect.right;
+    }
+    if (window.location.hash && window.location.hash !== active.hash) {
+      const url = new URL(window.location.href);
+      url.hash = active.hash;
+      history.replaceState(null, "", url);
+    }
+  }
+
+  let scrollFrame = null;
+  function scheduleNavigationSync() {
+    if (scrollFrame !== null) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = null;
+      syncNavigationToScroll();
+    });
+  }
+
+  function navigateToCategory(hash) {
+    const root = document.getElementById("rules-content");
+    if (!root || !hash) return;
+    const link = Array.from(root.querySelectorAll(".rules-nav-link")).find(item => item.hash === hash);
+    if (!link) return;
+    const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+    if (!target) return;
+    target.closest(".domain-group").open = true;
+    updateNavigation(root);
+    const heading = target.querySelector(".domain-head, .page-title");
+    if (heading.matches(".page-title")) heading.setAttribute("tabindex", "-1");
+    heading.focus({preventScroll: true});
+    const navigation = root.querySelector(".rules-nav");
+    const stackedNavigation = getComputedStyle(root.querySelector(".rules-layout")).display === "block";
+    target.style.scrollMarginTop = `${stackedNavigation ? navigation.offsetHeight + 16 : 16}px`;
+    target.scrollIntoView({block: "start", behavior: "instant"});
+  }
+
+  document.body.addEventListener("click", event => {
+    const link = event.target.closest(".rules-nav-link");
+    if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (window.location.hash !== link.hash) history.pushState(null, "", link.hash);
+    navigateToCategory(link.hash);
+  });
+  document.querySelector(".main")?.addEventListener("scroll", scheduleNavigationSync, {passive: true});
+  window.addEventListener("resize", scheduleNavigationSync);
+  window.addEventListener("hashchange", () => {
+    const root = document.getElementById("rules-content");
+    if (root) updateNavigation(root);
+    navigateToCategory(window.location.hash);
+  });
+
+  document.body.addEventListener("htmx:beforeRequest", event => {
+    const source = event.detail.elt;
+    const focused = document.activeElement;
+    if (source.matches(".seg-form") && source.contains(focused) && focused.id) {
+      stateFocus.set(event.detail.xhr, focused.id);
+    }
+  });
+
+  document.body.addEventListener("htmx:afterRequest", event => {
+    const id = stateFocus.get(event.detail.xhr);
+    stateFocus.delete(event.detail.xhr);
+    if (id && document.activeElement === document.body) {
+      document.getElementById(id)?.focus({preventScroll: true});
+    }
+  });
+
+  function initializeRuleGroups() {
+    const root = document.getElementById("rules-content");
+    if (!root) return;
+
+    const savedValue = localStorage.getItem(storageKey);
+    const savedGroups = savedValue === null ? null : savedValue.split(",").filter(Boolean);
+    const groups = root.querySelectorAll(".domain-group");
+
+    groups.forEach((group, index) => {
+      if (group.dataset.collapseInitialized) return;
+      if (savedGroups !== null) {
+        group.open = savedGroups.includes(group.id);
+      } else {
+        group.open = index === 0;
+      }
+
+      group.addEventListener("toggle", () => {
+        const openGroups = Array.from(root.querySelectorAll(".domain-group[open]"), item => item.id);
+        localStorage.setItem(storageKey, openGroups.join(","));
+        scheduleNavigationSync();
+      });
+      group.dataset.collapseInitialized = "true";
+    });
+    updateNavigation(root);
+  }
+
+  initializeRuleGroups();
+  navigateToCategory(window.location.hash);
+  scheduleNavigationSync();
+  document.body.addEventListener("htmx:afterSettle", () => {
+    initializeRuleGroups();
+    scheduleNavigationSync();
+  });
+})();
+</script>
 {% endblock %}

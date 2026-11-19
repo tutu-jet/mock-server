@@ -21,9 +21,10 @@ import asyncio
 import json
 import socket
 import time
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
+from typing import Annotated, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -31,7 +32,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response, Streamin
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app import flows, models
-from app.matcher import matcher
+from app.custom_capture import captures, CAPTURE_TIMEOUT
+from app.matcher import matcher, MASTER_SWITCH_KEY
+from app.rule_matching import REQUEST_MATCHES, rule_identity
+from app.system_rules import MIGRATION_KEY as SYSTEM_PATH_MIGRATION_KEY, scoped_default
+from web.body_viewer import reading_json
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 env = Environment(
@@ -40,7 +45,35 @@ env = Environment(
 )
 env.filters["strftime"] = lambda ts, fmt="%H:%M:%S": time.strftime(fmt, time.localtime(float(ts)))
 env.filters["human_bytes"] = flows.human_bytes
+
+
+def _pretty_json(text: str) -> Optional[str]:
+    """把一行压缩的 JSON 格式化成带缩进的多行字符串。
+    不是合法 JSON（如 HTML、纯文本、被截断的片段）时返回 None，模板回退到原文。"""
+    s = (text or "").strip()
+    if not s or s[0] not in "{[":
+        return None
+    try:
+        return json.dumps(json.loads(s), ensure_ascii=False, indent=2)
+    except (ValueError, TypeError, RecursionError):
+        return None
+
+
+env.filters["pretty_json"] = _pretty_json
+env.filters["reading_json"] = reading_json
 env.globals["MAX_BODY_BYTES"] = flows.MAX_BODY_BYTES
+env.globals["REQUEST_MATCHES"] = REQUEST_MATCHES
+
+
+def _static_version() -> str:
+    """用 app.css 的 mtime 做版本号，改样式后浏览器自动重新拉取，无需手动强刷。"""
+    try:
+        return str(int((Path(__file__).parent / "static" / "app.css").stat().st_mtime))
+    except OSError:
+        return "0"
+
+
+env.globals["STATIC_VERSION"] = _static_version()
 
 
 def render(name: str, **ctx) -> HTMLResponse:
@@ -61,21 +94,216 @@ def root():
 
 # ---------- 规则页 ----------
 
+# 规则名以 "[域] ..." 开头，这里把域提取出来用于分组。域顺序固定，未知归到"其他"。
+DOMAIN_ORDER = ["case", "servicerequest", "system", "calendar", "consumption", "provisioning", "notification"]
+DOMAIN_LABELS = {
+    "case": "Case",
+    "servicerequest": "Service Request",
+    "system": "System",
+    "calendar": "Calendar",
+    "consumption": "Consumption",
+    "provisioning": "Provisioning",
+    "notification": "Notification",
+    "other": "Other",
+}
+
+
+def _rule_domain(rule) -> str:
+    """从规则名 '[域] ...' 提取域；取不到归 'other'。"""
+    name = rule.name or ""
+    if name.startswith("[") and "]" in name:
+        return name[1:name.index("]")].strip()
+    return "other"
+
+
+def _rule_state(rule) -> str:
+    """预设身份不随编辑返回码改变；兼容尚未迁移的普通规则。"""
+    if rule.state_key:
+        return rule.state_key
+    if rule.status_code == 403:
+        return "noauth"
+    if rule.status_code == 500:
+        return "error"
+    if rule.status_code == 200:
+        return "nodata"
+    return "other"
+
+
+def _entity_name(rule) -> str:
+    """从规则名 '[域] EntitySet · 态' 提取 EntitySet。"""
+    name = rule.name or ""
+    if "]" in name:
+        rest = name[name.index("]") + 1:].strip()
+        if "·" in rest:
+            return rest.split("·")[0].strip()
+        return rest
+    return name
+
+
+def _card_pages(card) -> tuple[str, ...]:
+    entity = card["pattern"].removesuffix("*").rsplit("/", 1)[-1].split("(", 1)[0].split("?", 1)[0]
+    if card["domain"] == "calendar":
+        service = {"TimelineEvents": "calendar", "EventType": "mobile", "CalendarSettings": "mobile"}.get(entity)
+        if service and f"/odata/{service}/{entity}" in card["pattern"]:
+            return ("list",)
+        return ("unclassified",)
+    if card["domain"] == "notification":
+        return ("list",)
+    if card["domain"] == "system":
+        if card.get("request_match") == "system-list":
+            return ("list",)
+        if card.get("request_match") == "system-detail":
+            return ("detail",)
+        if entity in ("CACCloudAvaStatus", "CACSystemDetailHeader", "SystemBundle"):
+            return ("detail",)
+        return {
+            "BundleStatuses": ("bundle-list",),
+            "BundleSubscriptions": ("bundle-detail",),
+            "BundleDetailHeader": ("bundle-detail",),
+            "BundleSystem": ("bundle-detail",),
+        }.get(entity, ("unclassified",))
+    if card["domain"] != "case":
+        return ("unclassified",)
+    if card["request_match"] in ("case-my", "case-all"):
+        return ("overview", "list")
+    if card["request_match"] == "case-detail":
+        return ("detail",)
+    return {
+        "CaseSystem": ("list",),
+        "CaseCloseButtonStatus": ("detail",),
+        "IncidentHeader": ("detail",),
+        "IncidentMessageAuth": ("detail",),
+    }.get(entity, ("unclassified",))
+
+
+def _group_rules_by_domain(rules):
+    """域 -> 页面 -> 卡片；跨页卡片引用相同规则，域计数按匹配身份去重。"""
+    # 先按域、再按 (entity url_pattern) 聚合
+    by_domain: dict[str, dict[tuple[str, str, str], dict]] = {}
+    for r in rules:
+        dom = _rule_domain(r)
+        ent_key = rule_identity(r)
+        ent_map = by_domain.setdefault(dom, {})
+        card = ent_map.setdefault(ent_key, {
+            "name": _entity_name(r),
+            "pattern": r.url_pattern,
+            "method": r.method,
+            "request_match": r.request_match,
+            "selector_label": REQUEST_MATCHES.get(r.request_match, r.request_match),
+            "domain": dom,
+            "shared": r.request_match in ("case-my", "case-all"),
+            "states": {},       # state -> rule
+            "active": None,     # 当前启用的 state
+        })
+        card["states"][_rule_state(r)] = r
+        if r.enabled:
+            card["active"] = _rule_state(r)
+
+    ordered_keys = [d for d in DOMAIN_ORDER if d in by_domain]
+    ordered_keys += [d for d in by_domain if d not in DOMAIN_ORDER]
+    groups = []
+    for key in ordered_keys:
+        cards = list(by_domain[key].values())
+        cards.sort(key=lambda c: c["name"])
+        enabled = sum(1 for c in cards if c["active"])
+        pages = []
+        for page, label in (
+            ("overview", "Overview"), ("list", "List"),
+            ("detail", "Detail"),
+            ("bundle-list", "bundle list"),
+            ("bundle-detail", "bundle detail"),
+            ("unclassified", "未分类"),
+        ):
+            members = [c for c in cards if page in _card_pages(c)]
+            if members:
+                page_label = f"{key} {page}" if key in ("system", "calendar") and page in ("list", "detail") else label
+                pages.append({"key": page, "label": page_label, "entities": members})
+        groups.append({
+            "key": key,
+            "label": DOMAIN_LABELS.get(key, key),
+            "entities": cards,
+            "enabled_count": enabled,
+            "total": len(cards),
+            "pages": pages,
+        })
+    return groups
+
+
 @router.get("/rules", response_class=HTMLResponse)
-def rules_page(q: str = "", method: str = "ALL", enabled_only: bool = False):
+def rules_page():
+    return render("rules.html", **_rules_context())
+
+
+def _rules_context():
     rules = models.list_rules()
-    filtered = _filter_rules(rules, q, method, enabled_only)
-    return render(
-        "rules.html",
+    return dict(
         active_tab="rules",
-        rules=filtered,
-        total=len(rules),
-        enabled_count=sum(1 for r in rules if r.enabled),
-        q=q,
-        method_filter=method,
-        enabled_only=enabled_only,
-        methods=["ALL", "GET", "POST", "PUT", "DELETE", "PATCH", "*"],
+        entity_state_partial=True,
+        groups=_group_rules_by_domain(sorted(rules, key=lambda r: r.id)),
+        master_enabled=matcher.master_enabled,
+        total=len({rule_identity(r) for r in rules}),
+        enabled_count=len({rule_identity(r) for r in rules if r.enabled}),
     )
+
+
+def _rule_changed(rule_id: int, message: str):
+    ctx = _rules_context()
+    template = env.get_template("rules.html")
+    content = "".join(template.blocks["content"](template.new_context(ctx)))
+    content = content.replace('id="rules-content"', 'id="rules-content" hx-swap-oob="outerHTML"', 1)
+    toolbar = "".join(template.blocks["toolbar"](template.new_context(ctx)))
+    toolbar = toolbar.replace('id="page-toolbar"', 'id="page-toolbar" hx-swap-oob="outerHTML"', 1)
+    response = HTMLResponse(rule_detail(rule_id).body + content.encode() + toolbar.encode())
+    response.headers["HX-Trigger"] = json.dumps({"toast": {"kind": "success", "msg": message}})
+    return response
+
+
+def _entity_state_update(identity, target):
+    ctx = _rules_context()
+    template = env.get_template("rules.html")
+    cards = []
+    counts = []
+    for group in ctx["groups"]:
+        affected = False
+        for page in group["pages"]:
+            for entity in page["entities"]:
+                if (entity["pattern"], entity["method"], entity["request_match"]) != identity:
+                    continue
+                affected = True
+                entity_id = min(rule.id for rule in entity["states"].values())
+                card_id = f"entity-{entity_id}-{page['key']}"
+                html = env.get_template("_entity_card.html").render(
+                    e=entity, page=page, entity_state_partial=True,
+                )
+                cards.append((card_id, html))
+        if affected:
+            count = "".join(template.blocks["domain_count"](
+                template.new_context({**ctx, "g": group}),
+            ))
+            counts.append(count.replace("<span ", '<span hx-swap-oob="outerHTML" ', 1))
+    summary = "".join(template.blocks["rules_summary"](template.new_context(ctx)))
+    counts.append(summary.replace("<div ", '<div hx-swap-oob="outerHTML" ', 1))
+    target = target or cards[0][0]
+    return HTMLResponse("".join(
+        html if card_id == target else html.replace("<div ", '<div hx-swap-oob="outerHTML" ', 1)
+        for card_id, html in cards
+    ) + "".join(counts))
+
+
+def _configuration_conflict(rule_id, config, enabled):
+    current = models.get_rule(rule_id)
+    for rule in models.list_rules():
+        if rule.id == rule_id:
+            continue
+        if rule_identity(rule) == (config["url_pattern"], config["method"], config["request_match"]):
+            if _rule_state(rule) == _rule_state(current):
+                return rule
+    if enabled:
+        return matcher.find_conflict(
+            config["url_pattern"], config["method"], exclude_id=rule_id,
+            request_match=config["request_match"],
+        )
+    return None
 
 
 @router.post("/rules/{rule_id}/toggle", response_class=HTMLResponse)
@@ -85,7 +313,9 @@ def rule_toggle(rule_id: int):
         raise HTTPException(404)
     target = not r.enabled
     if target:
-        conflict = matcher.find_conflict(r.url_pattern, r.method, exclude_id=rule_id)
+        conflict = matcher.find_conflict(
+            r.url_pattern, r.method, exclude_id=rule_id, request_match=r.request_match,
+        )
         if conflict:
             resp = render("_rule_card.html", rule=r)
             resp.headers["HX-Trigger"] = json.dumps({
@@ -97,6 +327,40 @@ def rule_toggle(rule_id: int):
     return render("_rule_card.html", rule=models.get_rule(rule_id))
 
 
+@router.post("/rules/entity/state")
+def rule_set_entity_state(
+    request: Request, pattern: str = Form(...), state: str = Form(...),
+    method: Annotated[str, Form()] = "GET",
+    request_match: Annotated[str, Form()] = "",
+):
+    """切换同一 pattern + method + 请求分类下的状态，跨页面共享。"""
+    if state not in ("noauth", "error", "nodata", "custom", "off"):
+        raise HTTPException(422, "未知规则状态")
+    rules = models.list_rules()
+    members = [r for r in rules if rule_identity(r) == (pattern, method, request_match)]
+    if not members:
+        raise HTTPException(404, "规则不存在，请刷新页面")
+    if state != "off":
+        if sum(_rule_state(r) == state for r in members) != 1:
+            raise HTTPException(409, "该状态不存在或有重复规则，请先编辑规则")
+        for r in rules:
+            if not r.enabled or r in members or r.url_pattern != pattern:
+                continue
+            if r.method in ("*", method) or method == "*":
+                if not r.request_match or not request_match or r.request_match == request_match:
+                    raise HTTPException(409, "与已有启用规则冲突，请先关闭它")
+    for r in members:
+        want = (state != "off" and _rule_state(r) == state)
+        if r.enabled != want:
+            models.set_rule_enabled(r.id, want)
+    matcher.reload_from_db()
+    if request.headers.get("HX-Request") == "true":
+        return _entity_state_update(
+            (pattern, method, request_match), request.headers.get("HX-Target"),
+        )
+    return RedirectResponse("/rules", status_code=303)
+
+
 @router.delete("/rules/{rule_id}", response_class=Response)
 def rule_delete(rule_id: int):
     models.delete_rule(rule_id)
@@ -104,9 +368,114 @@ def rule_delete(rule_id: int):
     return Response(status_code=200)
 
 
+@router.post("/rules/master")
+def rules_master_toggle():
+    """整体 mock 总开关：关闭时所有请求透传，忽略全部规则。切换后回规则页。"""
+    current = models.get_setting(MASTER_SWITCH_KEY, "1") != "0"
+    models.set_setting(MASTER_SWITCH_KEY, "0" if current else "1")
+    matcher.reload_from_db()
+    return RedirectResponse("/rules", status_code=303)
+
+
 @router.get("/rules/new", response_class=HTMLResponse)
 def rule_new_form():
     return render("_rule_form.html", rule=None, methods=METHODS)
+
+
+@router.get("/rules/{rule_id}/custom/edit", response_class=HTMLResponse)
+def rule_custom_form(rule_id: int):
+    return render("_rule_form.html", **_custom_form_context(rule_id))
+
+
+def _custom_form_context(rule_id: int):
+    source = models.get_rule(rule_id)
+    if not source:
+        raise HTTPException(404, "规则不存在，请刷新页面")
+    variants = [r for r in models.list_rules() if rule_identity(r) == rule_identity(source)]
+    custom = [r for r in variants if _rule_state(r) == "custom"]
+    if len(custom) > 1:
+        raise HTTPException(409, "自定义响应有重复规则，请先调整")
+    if custom:
+        return dict(
+            rule=custom[0], methods=METHODS, variants=variants,
+            rule_state=_rule_state, capture_source_id=rule_id,
+        )
+    base = next((r for r in variants if _rule_state(r) == "nodata"), source)
+    draft = replace(
+        base, id=0, name=f"[{_rule_domain(source)}] {_entity_name(source)} · 自定义",
+        status_code=200, enabled=False, state_key="custom",
+    )
+    return dict(
+        rule=draft, methods=METHODS, custom_source_id=rule_id, capture_source_id=rule_id,
+    )
+
+
+@router.post("/rules/{rule_id}/custom/capture", response_class=HTMLResponse)
+def rule_capture_start(rule_id: int):
+    source = models.get_rule(rule_id)
+    if not source:
+        raise HTTPException(404, "规则不存在，请刷新页面")
+    try:
+        capture = captures.start(source)
+    except ValueError as error:
+        return _toast_resp(str(error), "error")
+    return render("_custom_capture.html", capture=capture, timeout=CAPTURE_TIMEOUT)
+
+
+@router.get("/rules/custom/capture/{token}", response_class=HTMLResponse)
+def rule_capture_poll(token: str):
+    capture = captures.get(token)
+    if not capture:
+        return render(
+            "_custom_capture.html", capture_error="抓取任务已取消或过期，请重新打开自定义编辑",
+        )
+    if capture.state in ("waiting", "inflight"):
+        return HTMLResponse("", status_code=204)
+    captures.cancel(token)
+    source = models.get_rule(capture.source.id)
+    if not source or rule_identity(source) != rule_identity(capture.source):
+        return render(
+            "_custom_capture.html", capture_error="接口匹配条件已变更或规则已删除，请重新打开自定义编辑",
+        )
+    context = _custom_form_context(source.id)
+    if capture.state == "error":
+        context["capture_error"] = capture.error
+    else:
+        context["rule"] = replace(
+            context["rule"], status_code=capture.status_code,
+            response_headers=capture.headers, response_body=capture.body,
+        )
+        context["capture_notice"] = "已填入真实响应；保存前可修改内容，保存不会自动切换启用状态。"
+    return render("_rule_form.html", **context)
+
+
+@router.post("/rules/custom/capture/{token}/cancel", response_class=HTMLResponse)
+def rule_capture_cancel(token: str):
+    capture = captures.get(token)
+    captures.cancel(token)
+    if capture and models.get_rule(capture.source.id):
+        return rule_custom_form(capture.source.id)
+    return HTMLResponse("")
+
+
+@router.post("/rules/{rule_id}/custom", response_class=HTMLResponse)
+def rule_custom_create(
+    rule_id: int, name: str = Form(...), url_pattern: str = Form(...),
+    method: str = Form(...), request_match: str = Form(""),
+    status_code: int = Form(200), response_headers: str = Form("{}"),
+    response_body: str = Form(""),
+):
+    source = models.get_rule(rule_id)
+    if not source:
+        raise HTTPException(404, "规则不存在，请刷新页面")
+    if (url_pattern.strip(), method, request_match) != rule_identity(source):
+        return _toast_resp("自定义响应必须使用原接口的匹配条件", "error")
+    if name.strip() != f"[{_rule_domain(source)}] {_entity_name(source)} · 自定义":
+        return _toast_resp("自定义响应必须保留原接口名称", "error")
+    return _save_rule(
+        None, name, url_pattern, method, status_code, response_headers,
+        response_body, False, request_match, state_key="custom",
+    )
 
 
 @router.get("/rules/{rule_id}/edit", response_class=HTMLResponse)
@@ -114,7 +483,39 @@ def rule_edit_form(rule_id: int):
     r = models.get_rule(rule_id)
     if not r:
         raise HTTPException(404)
-    return render("_rule_form.html", rule=r, methods=METHODS)
+    variants = [item for item in models.list_rules() if rule_identity(item) == rule_identity(r)]
+    return render(
+        "_rule_form.html", rule=r, methods=METHODS, variants=variants, rule_state=_rule_state,
+        capture_source_id=rule_id if _rule_state(r) == "custom" else None,
+    )
+
+
+@router.get("/rules/{rule_id}/detail", response_class=HTMLResponse)
+def rule_detail(rule_id: int):
+    rule = models.get_rule(rule_id)
+    if not rule:
+        raise HTTPException(404)
+    variants = [r for r in models.list_rules() if rule_identity(r) == rule_identity(rule)]
+    return render("_rule_detail.html", rule=rule, variants=variants, rule_state=_rule_state)
+
+
+@router.post("/rules/{rule_id}/restore", response_class=HTMLResponse)
+def rule_restore(rule_id: int):
+    rule = models.get_rule(rule_id)
+    if not rule:
+        raise HTTPException(404)
+    if not rule.default_config:
+        return _toast_resp("默认快照尚未建立，请重启新版服务", "error")
+    config = scoped_default(
+        rule_id, json.loads(rule.default_config),
+        models.get_setting(SYSTEM_PATH_MIGRATION_KEY, "{}"),
+    )
+    conflict = _configuration_conflict(rule_id, config, rule.enabled)
+    if conflict:
+        return _toast_resp(f"恢复与规则 #{conflict.id} 冲突，请先调整该规则", "error")
+    models.update_rule(rule_id, **config, enabled=rule.enabled)
+    matcher.reload_from_db()
+    return _rule_changed(rule_id, "已恢复默认配置，启用状态保持不变")
 
 
 @router.post("/rules", response_class=HTMLResponse)
@@ -126,14 +527,16 @@ def rule_create(
     response_headers: str = Form("{}"),
     response_body: str = Form(""),
     enabled: Optional[str] = Form(None),
+    request_match: str = Form(""),
 ):
     return _save_rule(None, name, url_pattern, method, status_code,
-                      response_headers, response_body, enabled == "on")
+                      response_headers, response_body, enabled == "on", request_match)
 
 
 @router.post("/rules/{rule_id}", response_class=HTMLResponse)
-def rule_update(
+async def rule_update(
     rule_id: int,
+    request: Request,
     name: str = Form(...),
     url_pattern: str = Form(...),
     method: str = Form("*"),
@@ -141,11 +544,15 @@ def rule_update(
     response_headers: str = Form("{}"),
     response_body: str = Form(""),
     enabled: Optional[str] = Form(None),
+    request_match: Optional[str] = Form(None),
 ):
-    if not models.get_rule(rule_id):
+    existing = models.get_rule(rule_id)
+    if not existing:
         raise HTTPException(404)
+    form = await request.form()
+    request_match = str(form["request_match"]) if "request_match" in form else existing.request_match
     return _save_rule(rule_id, name, url_pattern, method, status_code,
-                      response_headers, response_body, enabled == "on")
+                      response_headers, response_body, existing.enabled, request_match, request)
 
 
 # ---------- 流量页 ----------
@@ -199,17 +606,31 @@ async def flows_stream(request: Request):
     _, blocked_list = _load_blocked_hosts()
     queue = flows.buffer.subscribe()
     tpl = env.get_template("_flow_row.html")
+    shutting_down = request.app.state.shutting_down
 
     async def gen():
         try:
             while True:
-                if await request.is_disconnected():
+                if await request.is_disconnected() or shutting_down.is_set():
                     break
-                try:
-                    rec = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except asyncio.TimeoutError:
+                # 同时等「新流量」和「服务关停」，任一先到就醒。
+                # 否则 shutdown 时会一直卡在 queue.get()，被 graceful
+                # 超时强制 cancel，刷出一条 CancelledError traceback。
+                get_task = asyncio.ensure_future(queue.get())
+                stop_task = asyncio.ensure_future(shutting_down.wait())
+                done, pending = await asyncio.wait(
+                    {get_task, stop_task},
+                    timeout=15.0,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for t in pending:
+                    t.cancel()
+                if stop_task in done:
+                    break
+                if get_task not in done:  # 超时，发心跳保活
                     yield ": ping\n\n"
                     continue
+                rec = get_task.result()
                 if blocked_list and flows.host_blocked(rec.url, blocked_list):
                     continue
                 html = tpl.render(flow=rec).replace("\n", " ")
@@ -360,6 +781,7 @@ def flow_save_as_rule(flow_id: int):
         response_headers=fields["response_headers"],
         response_body=fields["response_body"],
         enabled=True,
+        request_match="",
     )
     matcher.reload_from_db()
 
@@ -442,14 +864,42 @@ def _detect_lan_ip() -> str:
         s.close()
 
 
+def _detect_lan_ips() -> list[str]:
+    """列出本机所有候选局域网 IPv4，默认网卡的那个排在最前。
+
+    多网卡（公司网 + 热点 + 虚拟网卡）时，UDP 探测只能给一个，手机未必连得上。
+    这里枚举全部网卡地址，去掉回环，让用户按「哪个连得上用哪个」自己选。
+    """
+    primary = _detect_lan_ip()
+    ips: list[str] = []
+    try:
+        # getaddrinfo 枚举本机主机名解析到的所有地址
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip not in ips:
+                ips.append(ip)
+    except OSError:
+        pass
+    # 默认网卡探测结果置顶；回环仅在没有任何候选时保留
+    ordered = [primary] if primary != "127.0.0.1" else []
+    for ip in ips:
+        if ip != "127.0.0.1" and ip not in ordered:
+            ordered.append(ip)
+    if not ordered:
+        ordered = [primary]
+    return ordered
+
+
 @router.get("/help", response_class=HTMLResponse)
 def help_page():
+    lan_ips = _detect_lan_ips()
     return render(
         "help.html",
         active_tab="help",
         proxy_port=9077,
         ui_port=9088,
-        lan_ip=_detect_lan_ip(),
+        lan_ip=lan_ips[0],
+        lan_ips=lan_ips,
     )
 
 
@@ -460,39 +910,40 @@ def _find_same_pattern_disabled(url_pattern: str, method: str):
     for rule in models.list_rules():
         if rule.enabled:
             continue
-        if rule.url_pattern != url_pattern:
+        if rule.url_pattern != url_pattern or rule.request_match:
             continue
         if rule.method == method or rule.method == "*" or method == "*":
             return rule
     return None
 
 
-def _filter_rules(rules, q: str, method: str, enabled_only: bool):
-    out = rules
-    if method != "ALL":
-        out = [r for r in out if r.method == method or r.method == "*"]
-    if enabled_only:
-        out = [r for r in out if r.enabled]
-    if q.strip():
-        kw = q.strip().lower()
-        out = [r for r in out if kw in r.name.lower() or kw in r.url_pattern.lower()]
-    return out
-
-
 def _save_rule(rule_id, name, url_pattern, method, status_code,
-               response_headers, response_body, enabled):
+               response_headers, response_body, enabled, request_match="", request=None,
+               state_key=""):
     name = name.strip()
     url_pattern = url_pattern.strip()
     if not name or not url_pattern:
         return _toast_resp("名称和 URL pattern 不能为空", "error")
+    if request_match not in REQUEST_MATCHES:
+        return _toast_resp("未知请求分类，请重新选择", "error")
+    if method not in METHODS or not 100 <= status_code <= 599:
+        return _toast_resp("方法或返回状态码无效", "error")
     try:
         obj = json.loads((response_headers or "{}").strip() or "{}")
         if not isinstance(obj, dict):
             raise ValueError
     except Exception:
         return _toast_resp("Headers 必须是合法 JSON 对象", "error")
+    if rule_id:
+        conflict = _configuration_conflict(
+            rule_id, dict(url_pattern=url_pattern, method=method, request_match=request_match), enabled,
+        )
+        if conflict:
+            return _toast_resp(f"与规则 #{conflict.id} 配置或状态冲突，请先调整", "error")
     if enabled:
-        conflict = matcher.find_conflict(url_pattern, method, exclude_id=rule_id)
+        conflict = matcher.find_conflict(
+            url_pattern, method, exclude_id=rule_id, request_match=request_match,
+        )
         if conflict:
             return _toast_resp(
                 f"与规则 #{conflict.id}「{conflict.name}」冲突，请先关闭它", "error"
@@ -501,15 +952,23 @@ def _save_rule(rule_id, name, url_pattern, method, status_code,
         models.update_rule(
             rule_id, name=name, url_pattern=url_pattern, method=method,
             status_code=status_code, response_headers=response_headers,
-            response_body=response_body, enabled=enabled,
+            response_body=response_body, enabled=enabled, request_match=request_match,
         )
     else:
-        models.create_rule(
-            name=name, url_pattern=url_pattern, method=method,
-            status_code=status_code, response_headers=response_headers,
-            response_body=response_body, enabled=enabled,
-        )
+        try:
+            created_id = models.create_rule(
+                name=name, url_pattern=url_pattern, method=method,
+                status_code=status_code, response_headers=response_headers,
+                response_body=response_body, enabled=enabled, request_match=request_match,
+                state_key=state_key,
+            )
+        except ValueError as error:
+            return _toast_resp(str(error), "error")
     matcher.reload_from_db()
+    if state_key == "custom":
+        return _rule_changed(created_id, "自定义响应已保存，点击「自定义」启用")
+    if rule_id and request is not None:
+        return _rule_changed(rule_id, "规则已保存，启用状态保持不变")
     resp = HTMLResponse("")
     resp.headers["HX-Redirect"] = "/rules"
     return resp
@@ -518,4 +977,5 @@ def _save_rule(rule_id, name, url_pattern, method, status_code,
 def _toast_resp(msg: str, kind: str = "info") -> HTMLResponse:
     resp = HTMLResponse("", status_code=200)
     resp.headers["HX-Trigger"] = json.dumps({"toast": {"kind": kind, "msg": msg}})
+    resp.headers["HX-Reswap"] = "none"
     return resp
